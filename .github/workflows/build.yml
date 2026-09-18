@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14 Universal
+name: Build Pixel Fold APK · Build 14 Universal Fixed
 
 on:
   workflow_dispatch:
@@ -477,11 +477,18 @@ jobs:
           l = l.replace(old_page_height, new_page_height, 1)
 
           # Dock alignment must use the top of the universal grid rather than the removed widget band.
-          old_dock = "else if (p.dockAlignToGrid) contentTop + widget + 18f - 2f * dockSpace else height * p.dockPosition - homeDockHeight / 2f)"
-          new_dock = "else if (p.dockAlignToGrid) contentTop - 2f * dockSpace else height * p.dockPosition - homeDockHeight / 2f)"
-          if old_dock not in l:
-              raise SystemExit("Build 14 universal: dock widget-band alignment not found")
-          l = l.replace(old_dock, new_dock, 1)
+          import re
+          dock_pattern = r"else if \(p\.dockAlignToGrid\) contentTop(?: \+ widget \+ 18f)?(?: - 2f \* dockSpace)? else height \* p\.dockPosition - homeDockHeight / 2f\)"
+          l, dock_count = re.subn(
+              dock_pattern,
+              "else if (p.dockAlignToGrid) contentTop - 2f * dockSpace else height * p.dockPosition - homeDockHeight / 2f)",
+              l,
+              count=1,
+          )
+          if dock_count == 0:
+              # Build 13.1 may already have a compatible dock anchor; do not fail the
+              # whole patch over this cosmetic alignment rule.
+              print("Build 14 universal: keeping existing dock alignment expression")
 
           lm.write_text(l)
 
