@@ -88,6 +88,8 @@ jobs:
                   raise SystemExit("Could not locate Apps position control in CustomizationSheet.kt")
 
           s = s.replace('"Dock height"', '"Dock vertical position"')
+          # Normalize line endings and strip trailing spaces introduced by the semantic edit.
+          s = "\n".join(line.rstrip() for line in s.splitlines()) + "\n"
           path.write_text(s)
           PY
 
