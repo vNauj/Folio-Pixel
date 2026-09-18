@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14 Universal Fixed
+name: Build Pixel Fold APK · Build 14 Universal Fixed 2
 
 on:
   workflow_dispatch:
@@ -499,9 +499,11 @@ jobs:
           # share the exact same 24-cell coordinate grid.
           old_col = """.verticalScroll(homeScroll).padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)) {"""
           new_col = """.padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)) {"""
-          if old_col not in h:
-              raise SystemExit("Build 14 universal: Home verticalScroll not found")
-          h = h.replace(old_col, new_col, 1)
+          if old_col in h:
+              h = h.replace(old_col, new_col, 1)
+          else:
+              # Build 13/13.1 already removed Home vertical scrolling.
+              print("Build 14 universal: Home verticalScroll already removed")
 
           # Remove drag autoscroll now that Home has no vertical scroll range.
           old_loop = """    LaunchedEffect(drag.active, page, paneBounds) {
