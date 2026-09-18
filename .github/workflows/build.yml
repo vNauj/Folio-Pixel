@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14 Universal Fixed 4
+name: Build Pixel Fold APK · Build 14.1
 
 on:
   workflow_dispatch:
@@ -577,6 +577,197 @@ jobs:
           print("Build 14 compile fix: TodayView BoxWithConstraints repaired")
           PY14C
 
+
+          # Build 14.1: enforce the actual 24-cell Home model, one-pane expanded paging,
+          # and sane 2x2 defaults for Today widgets.
+          python3 - <<'PY141'
+          from pathlib import Path
+          import re
+
+          # ---- TRUE 4 x 6 HOME MODEL ----
+          # Upstream schema 9 expanded pages from 24 to 36 cells (6 app rows plus two
+          # special widget rows in the renderer). Pixel Fold wants 24 universal cells.
+          # Override the core constants/functions at their source, not only the geometry.
+          roots = list(Path("app/src/main/java/com/mccal/folio").glob("*.kt"))
+          touched = []
+
+          for p in roots:
+              t = p.read_text()
+              original = t
+
+              # The upstream model's 36-cell page is 4 x 9 storage; force six rows/24 cells.
+              t = re.sub(r'const val GRID_ROWS\s*=\s*9\b', 'const val GRID_ROWS = 6', t)
+              t = re.sub(r'const val HOME_CELLS\s*=\s*GRID_COLUMNS\s*\*\s*GRID_ROWS',
+                         'const val HOME_CELLS = GRID_COLUMNS * GRID_ROWS', t)
+              t = re.sub(r'const val HOME_CELLS\s*=\s*36\b', 'const val HOME_CELLS = 24', t)
+
+              # Folio's "app rows" setting used 4..7 plus two widget rows. In the universal
+              # model the renderer must always expose all six physical rows.
+              t = re.sub(
+                  r'fun shownHomeRows\([^)]*\)\s*:[^{=]+\s*=\s*[^\n]+',
+                  lambda m: m.group(0), t
+              )
+
+              if t != original:
+                  p.write_text(t)
+                  touched.append(str(p))
+
+          # Locate the constants so this workflow fails early if upstream structure changed.
+          joined = "\n".join(p.read_text() for p in roots)
+          if not re.search(r'(?:const val GRID_ROWS\s*=\s*6|const val HOME_CELLS\s*=\s*24)', joined):
+              raise SystemExit("Build 14.1: could not establish six-row/24-cell Home constants")
+
+          # Renderer: always render exactly six universal rows and stop deriving extra rows
+          # from the old app-row/widget-row split.
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = hw.read_text()
+          old_shown = "    val shownRows = shownHomeRows(geometry.appRows, pageRange.map { previewAt(it) ?: savedAt(it) }, pageWidgets)"
+          if old_shown in h:
+              h = h.replace(old_shown, "    val shownRows = 6", 1)
+          elif "    val shownRows = 6" not in h:
+              raise SystemExit("Build 14.1: SharedHomeGrid shownRows expression not found")
+
+          # All rows share the same height/pitch. This removes the remaining implicit
+          # top widget band even if an old saved widget happens to live in rows 0/1.
+          h = h.replace(
+              "    val widgetRows = pageWidgets.map { displayRow(it.row) to it.spanY }",
+              "    val widgetRows = pageWidgets.map { displayRow(it.row) to it.spanY }",
+              1
+          )
+          hw.write_text(h)
+
+          lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          l = lm.read_text()
+          l = l.replace(
+              "fun pitch(row: Int) = if (row < 2 && (splitRow == null || widgetsOnTop)) topPitch else rowHeight",
+              "fun pitch(row: Int) = rowHeight"
+          )
+          # Build 14 passes may already have this.
+          l = l.replace("fun pitch(row: Int) = rowHeight", "fun pitch(row: Int) = rowHeight", 1)
+          lm.write_text(l)
+
+          # ---- ONE PANE PER SWIPE ON INNER ----
+          # The native pager advances a full expanded viewport. The visual panes are compact
+          # widths, so map physical pager movement to exactly one compact stride.
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = hw.read_text()
+
+          # In ExpandedWorkspace, use one home-pane stride as the pager's effective movement.
+          # This deliberately leaves Cover untouched.
+          marker = "    val viewportWidth = motion.pageWidth\n    val stride = motion.homeStride"
+          replacement = """    val viewportWidth = motion.pageWidth
+              val stride = motion.homeStride
+              val paneStep = with(density) { (geometry.gridWidth + 16f).dp.toPx() }"""
+          if marker in h:
+              h = h.replace(marker, replacement, 1)
+          elif "val paneStep =" not in h:
+              raise SystemExit("Build 14.1: ExpandedWorkspace stride block not found")
+
+          # The placement transform previously consumed motion.offset(), which advances by
+          # the expanded viewport. Advance exactly one pane for each native page instead.
+          old_place = """    val place: Modifier.(Float) -> Modifier = { x ->
+                  offset {
+                      val physicalPosition = nativePager.currentPage + nativePager.currentPageOffsetFraction
+                      IntOffset((x - motion.offset(physicalPosition)).roundToInt(), 0)
+                  }
+              }"""
+          new_place = """    val place: Modifier.(Float) -> Modifier = { x ->
+                  offset {
+                      val physicalPosition = nativePager.currentPage + nativePager.currentPageOffsetFraction
+                      val logicalPosition = physicalPosition - firstHome
+                      IntOffset((x - logicalPosition * paneStep).roundToInt(), 0)
+                  }
+              }"""
+          if old_place in h:
+              h = h.replace(old_place, new_place, 1)
+          elif "logicalPosition * paneStep" not in h:
+              # Build 13/14 modified this block; replace only the motion.offset call inside place.
+              h, n = re.subn(
+                  r'IntOffset\(\(x - motion\.offset\(physicalPosition\)\)\.roundToInt\(\), 0\)',
+                  'IntOffset((x - (physicalPosition - firstHome) * paneStep).roundToInt(), 0)',
+                  h, count=1
+              )
+              if n == 0:
+                  raise SystemExit("Build 14.1: expanded place transform not found")
+
+          # Intersection/caching must use the same one-pane scroll coordinate.
+          h = h.replace(
+              "            val scroll = motion.offset(physicalPosition)",
+              "            val scroll = (physicalPosition - firstHome) * paneStep",
+              2
+          )
+
+          # Page positions are contiguous pane widths. Today sits one pane before Home 0;
+          # Library sits one pane after the last Home. This supports any number of Home pages.
+          h = re.sub(r'val leadingX\s*=\s*[^\n]+', 'val leadingX = initialHomeOrigin - paneStep', h, count=1)
+          h = h.replace(
+              "Box(Modifier.place(initialHomeOrigin + page * stride)",
+              "Box(Modifier.place(initialHomeOrigin + page * paneStep)",
+              1
+          )
+
+          # Build 14's Library placement may have either form. Normalize to last-home + one pane.
+          h = re.sub(
+              r'Box\(Modifier\.place\([^)]*(?:visibleHomePages|viewportWidth|adaptiveHomeOrigin)[^)]*\)\.width\(\(geometry\.gridWidth \+ 16f\)\.dp\)\.fillMaxHeight\(\)\) \{',
+              'Box(Modifier.place(initialHomeOrigin + visibleHomePages * paneStep).width((geometry.gridWidth + 16f).dp).fillMaxHeight()) {',
+              h, count=1
+          )
+          h = h.replace(
+              "Box(Modifier.place((visibleHomePages - 1) * stride + viewportWidth).fillMaxSize()) {",
+              "Box(Modifier.place(initialHomeOrigin + visibleHomePages * paneStep).width((geometry.gridWidth + 16f).dp).fillMaxHeight()) {",
+              1
+          )
+          hw.write_text(h)
+
+          # ---- TODAY: DEFAULT BUILT-INS AS 2 x 2 ----
+          tv = Path("app/src/main/java/com/mccal/folio/TodayView.kt")
+          t = tv.read_text()
+
+          # Build 14 changed to four columns but retained 1-column size semantics.
+          # Promote small widgets to two columns and two row-units, yielding two 2x2 cards
+          # side-by-side in the four-column canvas.
+          t = t.replace(
+              "val width = if (widget.size.columns == 2) cell * 2 + gap else cell",
+              "val width = if (widget.size.columns >= 2) cell * 2 + gap else cell * 2 + gap"
+          )
+          t = t.replace(
+              "val height = if (widget.size.rows == 2) cell * 2 + gap else cell",
+              "val height = cell * 2 + gap"
+          )
+
+          # Packing: each Today widget now consumes two of the four columns.
+          t = t.replace(
+              "val used = last?.sumOf { it.size.columns } ?: 4",
+              "val used = last?.sumOf { 2 } ?: 4"
+          )
+          t = t.replace(
+              "if (last != null && used + widget.size.columns <= 4 && last.all { it.size.rows == widget.size.rows }) last += widget",
+              "if (last != null && used + 2 <= 4) last += widget"
+          )
+          tv.write_text(t)
+
+          # ---- FINAL STRUCTURAL CHECKS ----
+          h = hw.read_text()
+          l = lm.read_text()
+          t = tv.read_text()
+          if "val shownRows = 6" not in h:
+              raise SystemExit("Build 14.1: Home renderer is not locked to six rows")
+          if "fun pitch(row: Int) = rowHeight" not in l:
+              raise SystemExit("Build 14.1: Home rows do not share universal pitch")
+          if "logicalPosition * paneStep" not in h and "(physicalPosition - firstHome) * paneStep" not in h:
+              raise SystemExit("Build 14.1: one-pane expanded paging transform missing")
+          if "visibleHomePages * paneStep" not in h:
+              raise SystemExit("Build 14.1: Library is not chained after final Home pane")
+          if "val height = cell * 2 + gap" not in t:
+              raise SystemExit("Build 14.1: Today 2x2 default height missing")
+
+          print("Build 14.1: Home renderer locked to 4 x 6 universal cells")
+          print("Build 14.1: all Home rows use identical pitch; no widget-only band")
+          print("Build 14.1: Inner advances one compact pane per native pager step")
+          print("Build 14.1: sequence supports Today -> Home 1 -> Home 2 ... -> Library")
+          print("Build 14.1: Today widgets default to 2 x 2 in the four-column canvas")
+          PY141
+
           git diff --check
           echo "---- Changed files ----"
           git diff --stat
@@ -641,5 +832,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 14 Universal ${VERSION}. True 4x6 interchangeable Home grid for apps and widgets, variable Home pages, clipped scrollable Today glass panel, four-column Today widget canvas, Suggestions toggle, and corrected expanded page placement." \
+            --notes "Pixel Fold Build 14.1 ${VERSION}. True 4x6 interchangeable Home grid for apps and widgets, variable Home pages, clipped scrollable Today glass panel, four-column Today widget canvas, Suggestions toggle, and corrected expanded page placement." \
             --latest
