@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK
+name: Build Pixel Fold APK · Build 7
 
 on:
   workflow_dispatch:
@@ -93,7 +93,7 @@ jobs:
           path.write_text(s)
           PY
 
-          # Build 6: bounded Pixel Fold geometry, independent presets, and GitHub updater.
+          # Build 7: bounded Pixel Fold geometry, independent presets, and a working fork updater.
           python3 - <<'PY2'
           from pathlib import Path
           import re, os, textwrap
@@ -115,7 +115,7 @@ jobs:
               "    val maxContentTop = maxOf(topFloor, usableBottom - pageHeight)\n"
               "    val centeredTop = topFloor + ((usableBottom - topFloor - pageHeight) / 2f)\n"
               "    val baseContentTop = if (p.pageTop) topFloor else centeredTop\n"
-              "    // Pixel Fold Build 6: center the complete Home page in the usable launcher region,\n"
+              "    // Pixel Fold Build 7: center the complete Home page in the usable launcher region,\n"
               "    // then apply the per-display manual correction and clamp the final page bounds.\n"
               "    val contentTop = (baseContentTop + p.pageOffset).coerceIn(topFloor, maxContentTop)"
           )
@@ -197,42 +197,33 @@ jobs:
           if not updater_files:
               raise SystemExit("Build 6: Folio development updater fallback was not found")
 
-          # Give every GitHub build a monotonically newer Android version so it can
-          # install over the previous APK. Folio may declare its version in a
-          # different Gradle file depending on the upstream revision, so locate
-          # the declaration instead of assuming app/build.gradle.kts.
+          # Build 7 updater contract: the APK's internal version and GitHub release tag
+          # MUST be the same semantic version. Upstream derives versionCode from folioVersion.
           run = int(os.environ['GITHUB_RUN_NUMBER'])
-          version_code = 10000 + run
-          version_name = f"0.5.{run}"
-          gradle = None
-          n1 = n2 = 0
-          for candidate in list(Path('.').glob('*.gradle.kts')) + list(Path('.').glob('*.gradle')) + list(Path('app').glob('*.gradle.kts')) + list(Path('app').glob('*.gradle')):
-              g = candidate.read_text()
-              g2, c1 = re.subn(r'versionCode\s*(?:=\s*)?(\d+)', lambda m: m.group(0).replace(m.group(1), str(version_code)), g, count=1)
-              g3, c2 = re.subn(r'versionName\s*(?:=\s*)?["\']([^"\']+)["\']', lambda m: m.group(0).replace(m.group(1), version_name), g2, count=1)
-              if c1 or c2:
-                  candidate.write_text(g3)
-                  gradle = candidate
-                  n1 += c1; n2 += c2
-                  print(f"Android version source: {candidate} (versionCode={c1}, versionName={c2})")
-                  if n1 and n2: break
-          # This pinned Folio revision reports 0.6.5 from generated/derived build
-          # metadata rather than necessarily declaring both values literally.
-          # Give the fork a unique semver for GitHub update comparison as well.
-          release_version = f"0.6.{1000 + run}"
-          if not n2:
-              for candidate in [Path('gradle.properties'), Path('app/gradle.properties'), Path('version.properties')]:
-                  if not candidate.exists(): continue
-                  g = candidate.read_text()
-                  g2, c = re.subn(r'0\.6\.5', release_version, g)
-                  if c:
-                      candidate.write_text(g2); n2 += c
-                      print(f"Version name fallback updated in {candidate}: {release_version}")
-          if not (n1 and n2):
-              print(f"Warning: literal Android version fields found: versionCode={n1}, versionName={n2}. Build will continue; updater uses the release tag.")
+          release_version = f"0.7.{run}"
+          gradle = Path('app/build.gradle.kts')
+          g = gradle.read_text()
+          g, vc = re.subn(r'val folioVersion\s*=\s*"[^"]+"', f'val folioVersion = "{release_version}"', g, count=1)
+          if vc != 1:
+              raise SystemExit("Build 7: could not set folioVersion in app/build.gradle.kts")
+          gradle.write_text(g)
 
-          cleanup_paths = [layout, cs, glass, lib]
-          if gradle is not None: cleanup_paths.append(gradle)
+          # The fast build uses applicationIdSuffix=.dev. Upstream intentionally disables
+          # GitHub updates for that package; this fork intentionally enables them while
+          # retaining the stable debug signing key so updates install over Build 7+.
+          su = Path('app/src/main/java/com/mccal/folio/SoftwareUpdate.kt')
+          u = su.read_text()
+          u, supported_count = re.subn(
+              r'fun supported\(context: Context\) = context\.packageName == FOLIO_CLASSES',
+              'fun supported(context: Context) = context.packageName == FOLIO_CLASSES || context.packageName == "$FOLIO_CLASSES.dev"',
+              u, count=1)
+          if supported_count != 1:
+              raise SystemExit("Build 7: could not enable updater for the fast .dev package")
+          su.write_text(u)
+          print(f"Build 7 version: {release_version}; updater enabled for Folio Dev package")
+
+          cleanup_paths = [layout, cs, glass, lib, su]
+          cleanup_paths.append(gradle)
           for path in cleanup_paths:
               x = path.read_text(); path.write_text("\n".join(line.rstrip() for line in x.splitlines()) + "\n")
           PY2
@@ -242,6 +233,9 @@ jobs:
           git diff --stat
           echo "---- Pixel Fold controls found ----"
           grep -n "Pixel Fold Layout\|Home vertical position\|Dock vertical position"             app/src/main/java/com/mccal/folio/CustomizationSheet.kt
+          echo "---- Updater contract ----"
+          grep -n "vNauj/Folio-Pixel\|fun supported" app/src/main/java/com/mccal/folio/SoftwareUpdate.kt
+          grep -n "val folioVersion" app/build.gradle.kts
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -278,7 +272,7 @@ jobs:
         run: |
           mkdir -p output
           cp app/build/outputs/apk/fast/app-fast.apk output/Folio-Pixel-Fold.apk
-          sha256sum output/Folio-Pixel-Fold.apk > output/SHA256.txt
+          (cd output && sha256sum Folio-Pixel-Fold.apk > SHA256SUMS.txt)
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -293,10 +287,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="0.6.$((1000 + GITHUB_RUN_NUMBER))"
+          VERSION="0.7.${GITHUB_RUN_NUMBER}"
           TAG="v${VERSION}"
-          gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256.txt \
+          gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold development build ${VERSION}. Bounded Pixel Fold geometry, separate Inner/Cover tuning, and GitHub in-app update support." \
+            --notes "Pixel Fold Build 7 ${VERSION}. Pixel Fold layout tuning plus functional in-app GitHub release updates for Build 7 and later." \
             --latest
