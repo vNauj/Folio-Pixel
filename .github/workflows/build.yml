@@ -316,12 +316,20 @@ jobs:
           # Keep cover behavior untouched.
           stride_old = 'val stride = viewportWidth'
           if stride_old in s:
-              s = s.replace(stride_old, 'val stride = if (geometry.expanded) homePaneWidth else viewportWidth', 1)
+              s = s.replace(stride_old, 'val stride = if (geometry.expanded) with(density) { (geometry.gridWidth + 16f).dp.toPx() } else viewportWidth', 1)
           else:
               # Some upstream revisions derive stride from pageWidth; patch the first simple assignment only.
               import re
-              s, n = re.subn(r'val stride = [^\n]+', 'val stride = if (geometry.expanded) homePaneWidth else viewportWidth', s, count=1)
+              s, n = re.subn(r'val stride = [^\n]+', 'val stride = if (geometry.expanded) with(density) { (geometry.gridWidth + 16f).dp.toPx() } else viewportWidth', s, count=1)
               if n != 1: raise SystemExit("Build 13: pager stride assignment not found")
+
+          # Build 13.1 sanity check: stride is declared before homePaneWidth in upstream,
+          # so it must not reference that later local variable.
+          stride_line = next((line for line in s.splitlines() if line.strip().startswith("val stride =")), "")
+          if "homePaneWidth" in stride_line:
+              raise SystemExit("Build 13.1: pager stride still references homePaneWidth before declaration")
+          if "geometry.gridWidth + 16f" not in stride_line:
+              raise SystemExit("Build 13.1: compact expanded pager stride was not installed")
 
           hw.write_text(s)
 
@@ -345,7 +353,7 @@ jobs:
 
           print("Build 13: Home fixed at 4 columns x 6 rows on Cover and Inner")
           print("Build 13: Home vertical scrolling removed; App Library remains vertically scrollable")
-          print("Build 13: expanded pager advances one compact pane per swipe")
+          print("Build 13.1: expanded pager advances one compact pane per swipe without forward-reference compile error")
           print("Build 13: page baseline shifted upward; manual per-display offset preserved")
           PY13
 
