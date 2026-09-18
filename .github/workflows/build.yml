@@ -96,7 +96,7 @@ jobs:
           # Build 6: bounded Pixel Fold geometry, independent presets, and GitHub updater.
           python3 - <<'PY2'
           from pathlib import Path
-          import re, os
+          import re, os, textwrap
 
           layout = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
           t = layout.read_text()
@@ -104,18 +104,20 @@ jobs:
           # pageOffset is applied LAST, then clamped against the actual geometry,
           # so the slider moves the whole Home page without allowing its measured
           # page rectangle to leave the usable launcher region.
-          old_block = '''val topFloor = if (expanded) 30f else 16f
-    val baseContentTop = if (p.pageTop) topFloor else ((height - pageHeight - homeBottomSpace) / 2f)
-        .coerceIn(topFloor, maxOf(72f, height * .18f))
-    val contentTop = (baseContentTop + p.pageOffset)
-        .coerceIn(topFloor, maxOf(topFloor, height - pageHeight - homeBottomSpace))'''
-          new_block = '''val topFloor = if (expanded) 30f else 16f
-    val usableBottom = maxOf(topFloor, height - homeBottomSpace)
-    val maxContentTop = maxOf(topFloor, usableBottom - pageHeight)
-    val centeredTop = topFloor + ((usableBottom - topFloor - pageHeight) / 2f)
-    val baseContentTop = if (p.pageTop) topFloor else centeredTop
-    val contentTop = (baseContentTop + p.pageOffset)
-        .coerceIn(topFloor, maxContentTop)'''
+          old_block = textwrap.dedent('''\
+          val topFloor = if (expanded) 30f else 16f
+          val baseContentTop = if (p.pageTop) topFloor else ((height - pageHeight - homeBottomSpace) / 2f)
+          .coerceIn(topFloor, maxOf(72f, height * .18f))
+          val contentTop = (baseContentTop + p.pageOffset)
+          .coerceIn(topFloor, maxOf(topFloor, height - pageHeight - homeBottomSpace))''')
+          new_block = textwrap.dedent('''\
+          val topFloor = if (expanded) 30f else 16f
+          val usableBottom = maxOf(topFloor, height - homeBottomSpace)
+          val maxContentTop = maxOf(topFloor, usableBottom - pageHeight)
+          val centeredTop = topFloor + ((usableBottom - topFloor - pageHeight) / 2f)
+          val baseContentTop = if (p.pageTop) topFloor else centeredTop
+          val contentTop = (baseContentTop + p.pageOffset)
+          .coerceIn(topFloor, maxContentTop)''')
           if old_block not in t:
               raise SystemExit("Build 6: expected Build 4 geometry block not found")
           t = t.replace(old_block, new_block, 1).replace('coerceIn(-80f, 160f)', 'coerceIn(-220f, 220f)')
