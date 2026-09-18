@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 13
+name: Build Pixel Fold APK · Build 14 Universal
 
 on:
   workflow_dispatch:
@@ -357,6 +357,182 @@ jobs:
           print("Build 13: page baseline shifted upward; manual per-display offset preserved")
           PY13
 
+
+          # Build 14: real 4x6 Home grid, normalized page strip, and bubbled Today View.
+          python3 - <<'PY14'
+          from pathlib import Path
+
+          lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          l = lm.read_text()
+          if "val rows = 6" not in l:
+              raise SystemExit("Build 14: Build 13 six-app-row rule not found")
+          # `rows` counts app rows; Folio separately reserves two widget half-rows.
+          # 4 app rows + 2 widget rows = the requested 4x6 total grid.
+          l = l.replace("val rows = 6", "val rows = 4", 1)
+          lm.write_text(l)
+
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = hw.read_text()
+
+          # Today is the true leading pane instead of inheriting the old centered Home origin.
+          old_leading = "val leadingX = adaptiveHomeOrigin - stride"
+          if old_leading not in h:
+              raise SystemExit("Build 14: expanded Today origin not found")
+          h = h.replace(old_leading, "val leadingX = with(density) { 16.dp.toPx() }", 1)
+
+          # Library follows however many Home pages currently exist.
+          old_library = "Box(Modifier.place((visibleHomePages - 1) * stride + viewportWidth).width((geometry.gridWidth + 16f).dp).fillMaxHeight()) {"
+          new_library = "Box(Modifier.place(adaptiveHomeOrigin + visibleHomePages * stride).width((geometry.gridWidth + 16f).dp).fillMaxHeight()) {"
+          if old_library not in h:
+              raise SystemExit("Build 14: compact App Library placement not found")
+          h = h.replace(old_library, new_library, 1)
+          hw.write_text(h)
+
+          tv = Path("app/src/main/java/com/mccal/folio/TodayView.kt")
+          t = tv.read_text()
+
+          old_context = "    val context = LocalContext.current\n    val edit = remember { HomeEditMode() }"
+          new_context = "    val context = LocalContext.current\n    val todayPrefs = remember(context) { context.getSharedPreferences(\"folio_today\", android.content.Context.MODE_PRIVATE) }\n    var showSuggestions by remember { mutableStateOf(todayPrefs.getBoolean(\"show_suggestions\", true)) }\n    val edit = remember { HomeEditMode() }"
+          if old_context not in t:
+              raise SystemExit("Build 14: Today context block not found")
+          t = t.replace(old_context, new_context, 1)
+
+          old_box = '        BoxWithConstraints(modifier.testTag("today-view")) {'
+          new_box = '        BoxWithConstraints(modifier\\n            .clip(RoundedCornerShape(24.dp))\\n            .background(Glass.copy(alpha = .30f))\\n            .border(FolioGlass.edge, RoundedCornerShape(24.dp))\\n            .testTag("today-view")) {'
+          if old_box not in t:
+              raise SystemExit("Build 14: Today outer box not found")
+          t = t.replace(old_box, new_box.replace("\\\\n", "\n"), 1)
+
+          old_grid = "            val columnsWidth = minOf(maxWidth - 32.dp, 390.dp)\n            val gap = 14.dp\n            val cell = (columnsWidth - gap) / 2"
+          new_grid = "            val columnsWidth = (maxWidth - 32.dp).coerceAtLeast(240.dp)\n            val gap = 10.dp\n            val cell = (columnsWidth - gap * 3) / 4"
+          if old_grid not in t:
+              raise SystemExit("Build 14: Today grid dimensions not found")
+          t = t.replace(old_grid, new_grid, 1)
+
+          old_suggestions = "                    if (suggestions.isNotEmpty() && !edit.active) TodaySuggestions(suggestions, 4, onLaunch)"
+          if old_suggestions not in t:
+              raise SystemExit("Build 14: Today Suggestions call not found")
+          t = t.replace(old_suggestions, "                    if (showSuggestions && suggestions.isNotEmpty() && !edit.active) TodaySuggestions(suggestions, 4, onLaunch)", 1)
+
+          old_width = "                                val width = if (widget.size.columns == 2) columnsWidth else cell"
+          if old_width not in t:
+              raise SystemExit("Build 14: Today widget width rule not found")
+          t = t.replace(old_width, "                                val width = if (widget.size.columns == 2) cell * 2 + gap else cell", 1)
+
+          old_used = "        val used = last?.sumOf { it.size.columns } ?: 2"
+          old_pack = "        if (last != null && used + widget.size.columns <= 2 && last.all { it.size.rows == widget.size.rows }) last += widget"
+          if old_used not in t or old_pack not in t:
+              raise SystemExit("Build 14: Today two-column packing rules not found")
+          t = t.replace(old_used, "        val used = last?.sumOf { it.size.columns } ?: 4", 1)
+          t = t.replace(old_pack, "        if (last != null && used + widget.size.columns <= 4 && last.all { it.size.rows == widget.size.rows }) last += widget", 1)
+
+          old_edit = '                            JigglePill(stringResource(R.string.add_widget_2), Icons.Rounded.Add, description = "Add widget") { onAddWidget() }\n                            Spacer(Modifier.width(12.dp))\n                            JigglePill(stringResource(R.string.done), emphasized = true) { edit.stop() }'
+          new_edit = '                            JigglePill(stringResource(R.string.add_widget_2), Icons.Rounded.Add, description = "Add widget") { onAddWidget() }\n                            Spacer(Modifier.width(8.dp))\n                            JigglePill(if (showSuggestions) "Suggestions On" else "Suggestions Off") {\n                                showSuggestions = !showSuggestions\n                                todayPrefs.edit().putBoolean("show_suggestions", showSuggestions).apply()\n                            }\n                            Spacer(Modifier.width(8.dp))\n                            JigglePill(stringResource(R.string.done), emphasized = true) { edit.stop() }'
+          if old_edit not in t:
+              raise SystemExit("Build 14: Today edit controls not found")
+          t = t.replace(old_edit, new_edit, 1)
+
+          tv.write_text(t)
+
+          if "val rows = 6" in lm.read_text() or "val rows = 4" not in lm.read_text():
+              raise SystemExit("Build 14: real 4x6 Home grid sanity check failed")
+          if "used + widget.size.columns <= 4" not in tv.read_text():
+              raise SystemExit("Build 14: Today four-column canvas sanity check failed")
+
+          print("Build 14: Home is 4 columns x 6 TOTAL rows (2 widget + 4 app)")
+          print("Build 14: existing variable Home-page count preserved between Today and Library")
+          print("Build 14: Today moved to leading edge and clipped inside a glass bubble")
+          print("Build 14: Today is an unlimited scrollable 4-column widget canvas")
+          print("Build 14: Suggestions can be toggled in Today edit mode and persist across launches")
+          print("Build 14: App Library follows the final Home page")
+          PY14
+
+
+          # Build 14 universal Home grid correction:
+          # remove Folio's special top widget-band geometry. All six Home rows use the
+          # same pitch and every one of the 24 cells can host an app or be spanned by a widget.
+          python3 - <<'PY14U'
+          from pathlib import Path
+
+          lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          l = lm.read_text()
+
+          old_pitch = "    fun pitch(row: Int) = if (row < 2 && (splitRow == null || widgetsOnTop)) topPitch else rowHeight"
+          new_pitch = "    fun pitch(row: Int) = rowHeight"
+          if old_pitch not in l:
+              raise SystemExit("Build 14 universal: special widget-row pitch not found")
+          l = l.replace(old_pitch, new_pitch, 1)
+
+          # Build 14's earlier pass set appRows to four because upstream adds two special
+          # widget rows. With those special rows removed, Home itself must render six rows.
+          if "val rows = 4" not in l:
+              raise SystemExit("Build 14 universal: four-row intermediate rule not found")
+          l = l.replace("val rows = 4", "val rows = 6", 1)
+
+          # Geometry is now six identical rows. Do not add a separate widget band to page height.
+          old_page_height = "val pageHeight = if (splitColumns) maxOf(widget + 18f + 2f * row, 3f * row) else widget + 18f + layoutRows * row"
+          new_page_height = "val pageHeight = if (splitColumns) maxOf(3f * row, 3f * row) else layoutRows * row"
+          if old_page_height not in l:
+              raise SystemExit("Build 14 universal: page-height widget band not found")
+          l = l.replace(old_page_height, new_page_height, 1)
+
+          # Dock alignment must use the top of the universal grid rather than the removed widget band.
+          old_dock = "else if (p.dockAlignToGrid) contentTop + widget + 18f - 2f * dockSpace else height * p.dockPosition - homeDockHeight / 2f)"
+          new_dock = "else if (p.dockAlignToGrid) contentTop - 2f * dockSpace else height * p.dockPosition - homeDockHeight / 2f)"
+          if old_dock not in l:
+              raise SystemExit("Build 14 universal: dock widget-band alignment not found")
+          l = l.replace(old_dock, new_dock, 1)
+
+          lm.write_text(l)
+
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = hw.read_text()
+
+          # A six-row universal Home must never vertically scroll. Widget and app drag targets
+          # share the exact same 24-cell coordinate grid.
+          old_col = """.verticalScroll(homeScroll).padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)) {"""
+          new_col = """.padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)) {"""
+          if old_col not in h:
+              raise SystemExit("Build 14 universal: Home verticalScroll not found")
+          h = h.replace(old_col, new_col, 1)
+
+          # Remove drag autoscroll now that Home has no vertical scroll range.
+          old_loop = """    LaunchedEffect(drag.active, page, paneBounds) {
+              while (drag.active) {
+                  val pointer = drag.pointer
+                  val amount = when {
+                      !paneBounds.contains(pointer) -> 0f
+                      pointer.y < paneBounds.top + verticalEdge && homeScroll.canScrollBackward -> -18f
+                      pointer.y > paneBounds.bottom - verticalEdge && homeScroll.canScrollForward -> 18f
+                      else -> 0f
+                  }
+                  if (amount != 0f) homeScroll.scrollBy(amount)
+                  delay(16)
+              }
+          }"""
+          if old_loop in h:
+              h = h.replace(old_loop, "", 1)
+
+          hw.write_text(h)
+
+          # Sanity checks: six rows, equal pitch, no special widget-band page height,
+          # and no Home vertical scrolling.
+          l2 = lm.read_text()
+          h2 = hw.read_text()
+          if "fun pitch(row: Int) = rowHeight" not in l2:
+              raise SystemExit("Build 14 universal: equal row pitch missing")
+          if "val rows = 6" not in l2:
+              raise SystemExit("Build 14 universal: six Home rows missing")
+          if "widget + 18f + layoutRows * row" in l2:
+              raise SystemExit("Build 14 universal: widget band still contributes to page height")
+          if ".verticalScroll(homeScroll)" in h2:
+              raise SystemExit("Build 14 universal: Home is still vertically scrollable")
+
+          print("Build 14 universal: Home = 4 x 6 interchangeable cells")
+          print("Build 14 universal: apps may occupy any cell; widgets span the same cell grid")
+          print("Build 14 universal: no dedicated widget rows and no Home vertical scrolling")
+          PY14U
+
           git diff --check
           echo "---- Changed files ----"
           git diff --stat
@@ -421,5 +597,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 13 ${VERSION}. Fixed 4x6 Home grid on Cover and Inner, one-pane-at-a-time expanded paging, fixed Home/Today pages, scrollable two-column App Library, and higher page alignment." \
+            --notes "Pixel Fold Build 14 Universal ${VERSION}. True 4x6 interchangeable Home grid for apps and widgets, variable Home pages, clipped scrollable Today glass panel, four-column Today widget canvas, Suggestions toggle, and corrected expanded page placement." \
             --latest
