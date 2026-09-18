@@ -283,12 +283,11 @@ jobs:
           # App Library stays Duo/cover-like: compact and two columns when unfolded.
           lib = Path("app/src/main/java/com/mccal/folio/AppLibrary.kt")
           a = lib.read_text()
-          panel_old = 'availableWidth.coerceAtLeast(0f).coerceAtMost(if (categories) 920f else 480f)'
-          panel_new = 'availableWidth.coerceAtLeast(0f).coerceAtMost(480f)'
-          if panel_old not in a: raise SystemExit("Build 12: library panel width helper not found")
-          a = a.replace(panel_old, panel_new, 1)
+          # The Build 11 source does not contain a separate panel-width helper here;
+          # the compact page width is established by HomeWorkspace above. Keep the
+          # category grid itself explicitly two columns on both Cover and Inner.
           cols_old = 'val columns = libraryColumns(libraryWidth.value)'
-          cols_new = 'val columns = if (maxWidth.value >= 650f) 2 else libraryColumns(libraryWidth.value)'
+          cols_new = 'val columns = 2'
           if cols_old not in a: raise SystemExit("Build 12: library columns calculation not found")
           a = a.replace(cols_old, cols_new, 1)
           lib.write_text(a)
