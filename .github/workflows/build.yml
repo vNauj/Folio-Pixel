@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 9
+name: Build Pixel Fold APK · Build 10
 
 on:
   workflow_dispatch:
@@ -220,7 +220,7 @@ jobs:
           if supported_count != 1:
               raise SystemExit("Build 7: could not enable updater for the fast .dev package")
           su.write_text(u)
-          print(f"Build 9 version: {release_version}; updater enabled for Folio Dev package")
+          print(f"Build 10 version: {release_version}; updater enabled for Folio Dev package")
 
           cleanup_paths = [layout, cs, glass, lib, su]
           cleanup_paths.append(gradle)
@@ -228,28 +228,49 @@ jobs:
               x = path.read_text(); path.write_text("\n".join(line.rstrip() for line in x.splitlines()) + "\n")
           PY2
 
-          # Build 9: center the actual measured Home content instead of another predicted page-height offset.
+          # Build 10: adaptive expanded workspace. Fix the source geometry that was
+          # constraining unfolded Home to a ~460dp pane and capping vertical centering.
           python3 - <<'PY3'
           from pathlib import Path
-          path = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
-          s = path.read_text()
-          old = 'Box(modifier.testTag("home-page-$page")'
-          if old not in s: raise SystemExit("Build 9: HomePagePane root Box not found")
-          s = s.replace(old, 'BoxWithConstraints(modifier.testTag("home-page-$page")', 1)
-          old = '.width((geometry.gridWidth + 16f).dp)\n        .height((contentHeight - bottomSpace).coerceAtLeast(0.dp))) {'
-          new = '.width((geometry.gridWidth + 16f).dp)\n        .fillMaxHeight()) {'
-          if old not in s: raise SystemExit("Build 9: constrained HomePagePane height not found")
+          import re
+
+          layout = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          s = layout.read_text()
+
+          # Launcher3-style rule: the live window owns the workspace. On expanded
+          # screens reserve the side rail, then let Home use the remaining width.
+          old = 'val homeWidth = if (expanded) minOf(460f, width * 0.56f, if (foldAtCenter) width / 2f else Float.MAX_VALUE) else width'
+          new = 'val homeWidth = if (expanded) (width - p.dockWidth - 56f).coerceAtLeast(minOf(460f, width * .56f)) else width'
+          if old not in s:
+              raise SystemExit("Build 10: upstream expanded homeWidth rule not found")
           s = s.replace(old, new, 1)
-          old = 'Column(Modifier.offset(x = 16.dp).width(geometry.gridWidth.dp).fillMaxHeight()\n            .verticalScroll(homeScroll).padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)) {'
-          new = 'Box(Modifier.offset(x = 16.dp).width(geometry.gridWidth.dp).fillMaxHeight(), contentAlignment = Alignment.CenterStart) {\n            Column(Modifier.width(geometry.gridWidth.dp).wrapContentHeight().offset(y = editRoom)) {'
-          if old not in s: raise SystemExit("Build 9: offset-based Home Column not found")
+
+          # Build 4 inherited upstream's 18%-of-height ceiling. That ceiling is why
+          # a mathematically centered Fold layout kept snapping back toward the top.
+          old = 'val baseContentTop = if (p.pageTop) topFloor else ((height - pageHeight - homeBottomSpace) / 2f).coerceIn(topFloor, maxOf(72f, height * .18f))'
+          new = 'val baseContentTop = if (p.pageTop) topFloor else ((height - pageHeight - homeBottomSpace) / 2f).coerceAtLeast(topFloor)'
+          if old not in s:
+              raise SystemExit("Build 10: capped baseContentTop rule not found")
           s = s.replace(old, new, 1)
-          marker = '            if (state.error != null) Text(state.error, color = Color.White,\n                modifier = Modifier.clickable(onClick = onRefresh).padding(12.dp))\n        }'
-          replacement = '            if (state.error != null) Text(state.error, color = Color.White,\n                modifier = Modifier.clickable(onClick = onRefresh).padding(12.dp))\n            }\n        }'
-          if marker not in s: raise SystemExit("Build 9: Home content closing block not found")
-          s = s.replace(marker, replacement, 1)
-          path.write_text(s)
-          print("Build 9: measured Home composition is centered in the live pane")
+          layout.write_text(s)
+
+          home = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = home.read_text()
+
+          # Do not repeat Build 9's BoxWithConstraints experiment. Keep HomePagePane
+          # structurally upstream-like; geometry now receives the correct workspace.
+          # Relax the expanded workspace's explicit clipping so neighboring pages can
+          # travel beneath the persistent side rail instead of hitting a hard inner edge.
+          old = 'Box(Modifier.fillMaxSize().clipToBounds().testTag("expanded-workspace")) {'
+          new = 'Box(Modifier.fillMaxSize().testTag("expanded-workspace")) {'
+          if old not in h:
+              raise SystemExit("Build 10: expanded workspace clipping boundary not found")
+          h = h.replace(old, new, 1)
+          home.write_text(h)
+
+          print("Build 10: expanded Home now derives width from the live window")
+          print("Build 10: removed the 18% vertical-centering ceiling")
+          print("Build 10: relaxed expanded page clipping behind the side rail")
           PY3
 
           git diff --check
@@ -316,5 +337,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 9 ${VERSION}. Adaptive Home rewrite: centers the measured Home composition in the live viewport; updater retained." \
+            --notes "Pixel Fold Build 10 ${VERSION}. Adaptive expanded workspace: live-window Home width, true vertical centering, and relaxed page clipping behind the side rail; updater retained." \
             --latest
