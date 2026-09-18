@@ -93,7 +93,7 @@ jobs:
           path.write_text(s)
           PY
 
-          # Build 7: bounded Pixel Fold geometry, independent presets, and a working fork updater.
+          # Build 8: retain Build 7 updater and fix the expanded Home pane against its real parent viewport.
           python3 - <<'PY2'
           from pathlib import Path
           import re, os, textwrap
@@ -220,13 +220,33 @@ jobs:
           if supported_count != 1:
               raise SystemExit("Build 7: could not enable updater for the fast .dev package")
           su.write_text(u)
-          print(f"Build 7 version: {release_version}; updater enabled for Folio Dev package")
+          print(f"Build 8 version: {release_version}; updater enabled for Folio Dev package")
 
           cleanup_paths = [layout, cs, glass, lib, su]
           cleanup_paths.append(gradle)
           for path in cleanup_paths:
               x = path.read_text(); path.write_text("\n".join(line.rstrip() for line in x.splitlines()) + "\n")
           PY2
+
+          # Build 8: fix expanded Home against its actual Compose parent viewport.
+          python3 - <<'PY3'
+          from pathlib import Path
+          path = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          s = path.read_text()
+          old = 'Box(modifier.testTag("home-page-$page")'
+          if old not in s: raise SystemExit("Build 8: HomePagePane root Box not found")
+          s = s.replace(old, 'BoxWithConstraints(modifier.testTag("home-page-$page")', 1)
+          old = '.width((geometry.gridWidth + 16f).dp)\n        .height((contentHeight - bottomSpace).coerceAtLeast(0.dp))) {'
+          new = '.width((geometry.gridWidth + 16f).dp)\n        .fillMaxHeight()) {'
+          if old not in s: raise SystemExit("Build 8: constrained HomePagePane height not found")
+          s = s.replace(old, new, 1)
+          old = 'Column(Modifier.offset(x = 16.dp).width(geometry.gridWidth.dp).fillMaxHeight()\n            .verticalScroll(homeScroll).padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)) {'
+          new = '// Pixel Fold Build 8: correct against the real parent height, not another guessed dp bias.\n        val logicalPaneHeight = (contentHeight - bottomSpace).coerceAtLeast(0.dp)\n        val viewportCorrection = if (geometry.expanded) ((maxHeight - logicalPaneHeight) / 2).coerceAtLeast(0.dp) else 0.dp\n        Column(Modifier.offset(x = 16.dp).width(geometry.gridWidth.dp).fillMaxHeight()\n            .verticalScroll(homeScroll).padding(top = geometry.contentTop.dp + viewportCorrection + editRoom, bottom = 8.dp)) {'
+          if old not in s: raise SystemExit("Build 8: HomePagePane Column not found")
+          s = s.replace(old, new, 1)
+          path.write_text(s)
+          print("Build 8: HomePagePane fills its real parent; expanded centering uses live constraints")
+          PY3
 
           git diff --check
           echo "---- Changed files ----"
@@ -292,5 +312,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 7 ${VERSION}. Pixel Fold layout tuning plus functional in-app GitHub release updates for Build 7 and later." \
+            --notes "Pixel Fold Build 8 ${VERSION}. Expanded Pixel Fold Home viewport correction plus functional in-app GitHub release updates." \
             --latest
