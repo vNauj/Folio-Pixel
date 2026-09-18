@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14 Universal Fixed 3
+name: Build Pixel Fold APK · Build 14 Universal Fixed 4
 
 on:
   workflow_dispatch:
@@ -543,6 +543,39 @@ jobs:
           print("Build 14 universal: apps may occupy any cell; widgets span the same cell grid")
           print("Build 14 universal: no dedicated widget rows and no Home vertical scrolling")
           PY14U
+
+
+          # Build 14 compile fix: repair TodayView BoxWithConstraints call.
+          python3 - <<'PY14C'
+          from pathlib import Path
+          import re
+
+          tv = Path("app/src/main/java/com/mccal/folio/TodayView.kt")
+          t = tv.read_text()
+
+          pattern = re.compile(r'BoxWithConstraints\(modifier.*?\.testTag\("today-view"\)\)\s*\{', re.S)
+          lines = [
+              "BoxWithConstraints(",
+              "            modifier = modifier",
+              "                .clip(RoundedCornerShape(24.dp))",
+              "                .background(Glass.copy(alpha = .30f))",
+              "                .border(FolioGlass.edge, RoundedCornerShape(24.dp))",
+              '                .testTag("today-view")',
+              "        ) {",
+          ]
+          replacement = "\n".join(lines)
+          t, count = pattern.subn(replacement, t, count=1)
+          if count != 1:
+              raise SystemExit(f"Build 14 compile fix: expected one Today BoxWithConstraints, changed {count}")
+          tv.write_text(t)
+
+          fixed = tv.read_text()
+          if "BoxWithConstraints(\n            modifier = modifier" not in fixed:
+              raise SystemExit("Build 14 compile fix: malformed Today BoxWithConstraints")
+          if '.testTag("today-view")\n        ) {' not in fixed:
+              raise SystemExit("Build 14 compile fix: Today content block missing")
+          print("Build 14 compile fix: TodayView BoxWithConstraints repaired")
+          PY14C
 
           git diff --check
           echo "---- Changed files ----"
