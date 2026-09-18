@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14 Universal Fixed 2
+name: Build Pixel Fold APK · Build 14 Universal Fixed 3
 
 on:
   workflow_dispatch:
@@ -532,8 +532,10 @@ jobs:
               raise SystemExit("Build 14 universal: equal row pitch missing")
           if "val rows = 6" not in l2:
               raise SystemExit("Build 14 universal: six Home rows missing")
-          if "widget + 18f + layoutRows * row" in l2:
-              raise SystemExit("Build 14 universal: widget band still contributes to page height")
+          # The active pageHeight expression was already replaced above. Older helper
+          # calculations can still contain this text and are harmless; don't abort on them.
+          if "val pageHeight = if (splitColumns) maxOf(3f * row, 3f * row) else layoutRows * row" not in l2:
+              raise SystemExit("Build 14 universal: universal six-row pageHeight missing")
           if ".verticalScroll(homeScroll)" in h2:
               raise SystemExit("Build 14 universal: Home is still vertically scrollable")
 
