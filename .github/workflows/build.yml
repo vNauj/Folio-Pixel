@@ -245,12 +245,13 @@ jobs:
               raise SystemExit("Build 10: upstream expanded homeWidth rule not found")
           s = s.replace(old, new, 1)
 
-          # Build 4 inherited upstream's 18%-of-height ceiling. That ceiling is why
-          # a mathematically centered Fold layout kept snapping back toward the top.
-          old = 'val baseContentTop = if (p.pageTop) topFloor else ((height - pageHeight - homeBottomSpace) / 2f).coerceIn(topFloor, maxOf(72f, height * .18f))'
-          new = 'val baseContentTop = if (p.pageTop) topFloor else ((height - pageHeight - homeBottomSpace) / 2f).coerceAtLeast(topFloor)'
+          # Build 6.2 has already replaced upstream contentTop with centeredTop +
+          # maxContentTop. Remove that final upper clamp on expanded windows so the
+          # adaptive parent can use true centering; compact/cover keeps the clamp.
+          old = 'val contentTop = (baseContentTop + p.pageOffset).coerceIn(topFloor, maxContentTop)'
+          new = 'val contentTop = if (expanded) (baseContentTop + p.pageOffset).coerceAtLeast(topFloor) else (baseContentTop + p.pageOffset).coerceIn(topFloor, maxContentTop)'
           if old not in s:
-              raise SystemExit("Build 10: capped baseContentTop rule not found")
+              raise SystemExit("Build 10: Build 6.2 contentTop clamp not found")
           s = s.replace(old, new, 1)
           layout.write_text(s)
 
@@ -269,7 +270,7 @@ jobs:
           home.write_text(h)
 
           print("Build 10: expanded Home now derives width from the live window")
-          print("Build 10: removed the 18% vertical-centering ceiling")
+          print("Build 10: expanded Home uses true centered contentTop without the compact upper clamp")
           print("Build 10: relaxed expanded page clipping behind the side rail")
           PY3
 
