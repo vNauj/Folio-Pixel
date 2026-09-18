@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 11
+name: Build Pixel Fold APK · Build 12
 
 on:
   workflow_dispatch:
@@ -220,7 +220,7 @@ jobs:
           if supported_count != 1:
               raise SystemExit("Build 7: could not enable updater for the fast .dev package")
           su.write_text(u)
-          print(f"Build 11 version: {release_version}; updater enabled for Folio Dev package")
+          print(f"Build 12 version: {release_version}; updater enabled for Folio Dev package")
 
           cleanup_paths = [layout, cs, glass, lib, su]
           cleanup_paths.append(gradle)
@@ -228,27 +228,76 @@ jobs:
               x = path.read_text(); path.write_text("\n".join(line.rstrip() for line in x.splitlines()) + "\n")
           PY2
 
-          # Build 11: keep Folio's proven internal widget/grid dimensions, but position
-          # each complete Home pane inside the real expanded viewport.
-          python3 - <<'PY11'
+          # Build 12: one compact page language for the unfolded screen.
+          # Keep Folio's natural widget sizes, but make Home/Today/App Library share
+          # a status-aligned page viewport. Do not draw a permanent edge mask.
+          python3 - <<'PY12'
           from pathlib import Path
-          path = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
-          s = path.read_text()
+
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          s = hw.read_text()
+
+          # Center the natural Home pane in the expanded viewport without stretching widgets.
           old = '    val initialHomeOrigin = with(density) { panelWidth.toPx() }\n    val homePaneWidth = with(density) { (geometry.gridWidth + 16f).dp.toPx() }'
-          new = '    val initialHomeOrigin = with(density) { panelWidth.toPx() }\n    val homePaneWidth = with(density) { (geometry.gridWidth + 16f).dp.toPx() }\n    // Build 11: workspace size and content size are separate. Preserve Folio natural pane dimensions.\n    val adaptiveHomeOrigin = if (geometry.expanded) {\n        ((viewportWidth - homePaneWidth) / 2f).coerceAtLeast(initialHomeOrigin)\n    } else initialHomeOrigin'
-          if old not in s: raise SystemExit("Build 11: expanded origin block not found")
+          new = '''    val initialHomeOrigin = with(density) { panelWidth.toPx() }
+              val homePaneWidth = with(density) { (geometry.gridWidth + 16f).dp.toPx() }
+              // Build 12: page viewport and content size are separate. Natural Folio content stays compact.
+              val adaptiveHomeOrigin = if (geometry.expanded) {
+                  ((viewportWidth - homePaneWidth) / 2f).coerceAtLeast(initialHomeOrigin)
+              } else initialHomeOrigin'''
+          if old not in s: raise SystemExit("Build 12: expanded origin block not found")
           s = s.replace(old, new, 1)
           s = s.replace('val start = initialHomeOrigin + page * stride', 'val start = adaptiveHomeOrigin + page * stride', 1)
           s = s.replace('val leadingX = initialHomeOrigin - stride', 'val leadingX = adaptiveHomeOrigin - stride', 1)
           s = s.replace('Modifier.place(initialHomeOrigin + page * stride)', 'Modifier.place(adaptiveHomeOrigin + page * stride)', 1)
-          closing = '        }\n    }\n}\n\n@Composable\ninternal fun HomePagePane('
-          fade = '        }\n\n        if (geometry.expanded) Box(\n            Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(36.dp)\n                .background(Brush.horizontalGradient(listOf(\n                    Color.Transparent, Color(0x3312263D), Color(0x66101E33)\n                )))\n                .testTag("expanded-edge-fade")\n        )\n    }\n}\n\n@Composable\ninternal fun HomePagePane('
-          if closing not in s: raise SystemExit("Build 11: expanded workspace closing block not found")
-          s = s.replace(closing, fade, 1)
-          path.write_text(s)
-          print("Build 11: natural Home pane centered in live expanded viewport")
-          print("Build 11: controlled clipping retained with 36dp navy glass edge fade")
-          PY11
+
+          # Today View: same compact page, with its top aligned to the status/time bubble.
+          today = 'if (besideContent != null) besideContent(Modifier.fillMaxSize()) else HomePagePane('
+          today_new = 'if (besideContent != null) besideContent(Modifier.fillMaxSize().padding(top = geometry.statusTop.dp, bottom = bottomSpace)) else HomePagePane('
+          if today not in s: raise SystemExit("Build 12: Today View host not found")
+          s = s.replace(today, today_new, 1)
+
+          # App Library: make it a compact page rather than a full-screen expanded window.
+          library_host = 'Box(Modifier.place((visibleHomePages - 1) * stride + viewportWidth).fillMaxSize()) {'
+          library_host_new = 'Box(Modifier.place((visibleHomePages - 1) * stride + viewportWidth).width((geometry.gridWidth + 16f).dp).fillMaxHeight()) {'
+          if library_host not in s: raise SystemExit("Build 12: App Library host not found")
+          s = s.replace(library_host, library_host_new, 1)
+          s = s.replace('.padding(start = 16.dp, top = 16.dp, bottom = bottomSpace)', '.padding(start = 16.dp, top = geometry.statusTop.dp, bottom = bottomSpace)', 1)
+          hw.write_text(s)
+
+          # Inner Home: four app rows. Cover retains Folio's normal phone row behavior.
+          lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          l = lm.read_text()
+          rows_old = '    val rows = appRows.coerceIn(BASE_APP_ROWS, MAX_APP_ROWS)'
+          rows_new = '    val rows = if (expanded) minOf(appRows.coerceIn(BASE_APP_ROWS, MAX_APP_ROWS), 4) else appRows.coerceIn(BASE_APP_ROWS, MAX_APP_ROWS)'
+          if rows_old not in l: raise SystemExit("Build 12: row calculation not found")
+          l = l.replace(rows_old, rows_new, 1)
+
+          # Expanded mode honors the Y slider directly; cover keeps the safety clamp.
+          top_old = '    val contentTop = (baseContentTop + p.pageOffset).coerceIn(topFloor, maxContentTop)'
+          top_new = '    val contentTop = if (expanded) (baseContentTop + p.pageOffset).coerceAtLeast(topFloor) else (baseContentTop + p.pageOffset).coerceIn(topFloor, maxContentTop)'
+          if top_old not in l: raise SystemExit("Build 12: contentTop clamp not found")
+          l = l.replace(top_old, top_new, 1)
+          lm.write_text(l)
+
+          # App Library stays Duo/cover-like: compact and two columns when unfolded.
+          lib = Path("app/src/main/java/com/mccal/folio/AppLibrary.kt")
+          a = lib.read_text()
+          panel_old = 'availableWidth.coerceAtLeast(0f).coerceAtMost(if (categories) 920f else 480f)'
+          panel_new = 'availableWidth.coerceAtLeast(0f).coerceAtMost(480f)'
+          if panel_old not in a: raise SystemExit("Build 12: library panel width helper not found")
+          a = a.replace(panel_old, panel_new, 1)
+          cols_old = 'val columns = libraryColumns(libraryWidth.value)'
+          cols_new = 'val columns = if (maxWidth.value >= 650f) 2 else libraryColumns(libraryWidth.value)'
+          if cols_old not in a: raise SystemExit("Build 12: library columns calculation not found")
+          a = a.replace(cols_old, cols_new, 1)
+          lib.write_text(a)
+
+          print("Build 12: compact natural Home pane centered without widget stretching")
+          print("Build 12: Inner Home limited to four app rows; Home vertical offset works in expanded mode")
+          print("Build 12: Today and App Library top-align to the status bubble")
+          print("Build 12: App Library is a compact two-column page; permanent blue edge fade removed")
+          PY12
 
           git diff --check
           echo "---- Changed files ----"
@@ -309,10 +358,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION="0.7.${GITHUB_RUN_NUMBER}"
+          VERSION="0.8.${GITHUB_RUN_NUMBER}"
           TAG="v${VERSION}"
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 11 ${VERSION}. Adaptive Home pane placement and softened navy page edge; Pixel Fold layout tuning plus functional in-app GitHub release updates for Build 7 and later." \
+            --notes "Pixel Fold Build 12 ${VERSION}. Shared compact page geometry: status-aligned Today/App Library, two-column App Library, reduced Inner Home rows, working Home vertical offset, and no permanent edge strip." \
             --latest
