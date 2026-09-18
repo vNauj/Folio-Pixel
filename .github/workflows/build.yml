@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 12
+name: Build Pixel Fold APK · Build 13
 
 on:
   workflow_dispatch:
@@ -298,6 +298,57 @@ jobs:
           print("Build 12: App Library is a compact two-column page; permanent blue edge fade removed")
           PY12
 
+          # Build 13: fixed six-row Home grid on both displays, no vertical Home scrolling,
+          # higher page anchor, and one-pane-at-a-time expanded paging.
+          python3 - <<'PY13'
+          from pathlib import Path
+
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          s = hw.read_text()
+
+          # Home/Today are fixed pages. App Library keeps its own LazyColumn scrolling.
+          scroll = '.fillMaxHeight()\n            .verticalScroll(homeScroll).padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)'
+          fixed = '.fillMaxHeight()\n            .padding(top = geometry.contentTop.dp + editRoom, bottom = 8.dp)'
+          if scroll not in s: raise SystemExit("Build 13: Home verticalScroll chain not found")
+          s = s.replace(scroll, fixed, 1)
+
+          # Expanded Fold shows two adjacent panes. Advance by exactly one pane width, not a full viewport.
+          # Keep cover behavior untouched.
+          stride_old = 'val stride = viewportWidth'
+          if stride_old in s:
+              s = s.replace(stride_old, 'val stride = if (geometry.expanded) homePaneWidth else viewportWidth', 1)
+          else:
+              # Some upstream revisions derive stride from pageWidth; patch the first simple assignment only.
+              import re
+              s, n = re.subn(r'val stride = [^\n]+', 'val stride = if (geometry.expanded) homePaneWidth else viewportWidth', s, count=1)
+              if n != 1: raise SystemExit("Build 13: pager stride assignment not found")
+
+          hw.write_text(s)
+
+          lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          l = lm.read_text()
+
+          # Six total Home rows on Cover and Inner. Two rows can be consumed by a 2x2 widget,
+          # leaving four app rows in the common layout.
+          old_rows = 'val rows = if (expanded) minOf(appRows.coerceIn(BASE_APP_ROWS, MAX_APP_ROWS), 4) else appRows.coerceIn(BASE_APP_ROWS, MAX_APP_ROWS)'
+          new_rows = 'val rows = 6'
+          if old_rows not in l: raise SystemExit("Build 13: Build 12 row rule not found")
+          l = l.replace(old_rows, new_rows, 1)
+
+          # Move the fixed page region upward on both displays. This becomes the automatic baseline;
+          # the existing per-display pageOffset remains an optional fine adjustment.
+          old_base = 'val baseContentTop = if (p.pageTop) topFloor else centeredTop'
+          new_base = 'val baseContentTop = if (p.pageTop) topFloor else maxOf(topFloor, centeredTop - if (expanded) 82f else 54f)'
+          if old_base not in l: raise SystemExit("Build 13: centered top baseline not found")
+          l = l.replace(old_base, new_base, 1)
+          lm.write_text(l)
+
+          print("Build 13: Home fixed at 4 columns x 6 rows on Cover and Inner")
+          print("Build 13: Home vertical scrolling removed; App Library remains vertically scrollable")
+          print("Build 13: expanded pager advances one compact pane per swipe")
+          print("Build 13: page baseline shifted upward; manual per-display offset preserved")
+          PY13
+
           git diff --check
           echo "---- Changed files ----"
           git diff --stat
@@ -362,5 +413,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 12 ${VERSION}. Shared compact page geometry: status-aligned Today/App Library, two-column App Library, reduced Inner Home rows, working Home vertical offset, and no permanent edge strip." \
+            --notes "Pixel Fold Build 13 ${VERSION}. Fixed 4x6 Home grid on Cover and Inner, one-pane-at-a-time expanded paging, fixed Home/Today pages, scrollable two-column App Library, and higher page alignment." \
             --latest
