@@ -1054,7 +1054,7 @@ jobs:
         val folderPage = androidx.compose.runtime.remember(title, apps) { androidx.compose.runtime.mutableIntStateOf(0) }
         val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
         val shown = apps.drop(folderPage.intValue.coerceIn(0, pages - 1) * 9).take(9)
-        var swipeDistance = 0f
+        val swipeDistance = androidx.compose.runtime.remember(title, apps) { androidx.compose.runtime.mutableStateOf(0f) }
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .32f))
             .clickable(androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
             .testTag("category-folder-scrim"))
@@ -1067,16 +1067,16 @@ jobs:
                         overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
                     Box(Modifier.size(310.dp).clip(RoundedCornerShape(28.dp))
                         .background(Color(0xFF2C2C2E).copy(alpha = .96f)).border(FolioGlass.edge, RoundedCornerShape(28.dp))
-                        .pointerInput(pages, folderPage.intValue) {
-                            androidx.compose.foundation.gestures.detectHorizontalDragGestures(
-                                onDragStart = { swipeDistance = 0f },
-                                onHorizontalDrag = { change, dragAmount -> change.consume(); swipeDistance += dragAmount },
-                                onDragEnd = {
-                                    if (swipeDistance < -48f && folderPage.intValue < pages - 1) folderPage.intValue++
-                                    else if (swipeDistance > 48f && folderPage.intValue > 0) folderPage.intValue--
-                                    swipeDistance = 0f
-                                }, onDragCancel = { swipeDistance = 0f })
-                        }.testTag("category-folder")) {
+                        .draggable(
+                            state = androidx.compose.foundation.gestures.rememberDraggableState { delta -> swipeDistance.value += delta },
+                            orientation = androidx.compose.foundation.gestures.Orientation.Horizontal,
+                            onDragStarted = { swipeDistance.value = 0f },
+                            onDragStopped = {
+                                if (swipeDistance.value < -48f && folderPage.intValue < pages - 1) folderPage.intValue++
+                                else if (swipeDistance.value > 48f && folderPage.intValue > 0) folderPage.intValue--
+                                swipeDistance.value = 0f
+                            }
+                        ).testTag("category-folder")) {
                         Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 28.dp), verticalArrangement = Arrangement.SpaceEvenly) {
                             repeat(3) { rowIndex ->
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
@@ -1124,8 +1124,8 @@ jobs:
         lib.write_text(a)
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
-        if 'detectHorizontalDragGestures' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.1: swipe 3x3 folder verification failed")
-        print("Build 14.11.1: compact square 3x3 folders, horizontal swipe paging, dot indicators")
+        if 'rememberDraggableState' not in c or 'Orientation.Horizontal' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.2: swipe 3x3 folder verification failed")
+        print("Build 14.11.2: compact square 3x3 folders, horizontal swipe paging, dot indicators")
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
@@ -1180,5 +1180,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.11.1 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 14.11.2 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
