@@ -1,5 +1,5 @@
 name: "Build Pixel Fold APK \xB7 Build 14.4 Two-Pane + Dock 5"
-true:
+on:
   workflow_dispatch: null
 permissions:
   contents: write
