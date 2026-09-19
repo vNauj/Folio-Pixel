@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14.3 Geometry
+name: Build Pixel Fold APK · Build 14.4 Two-Pane + Dock 5
 
 on:
   workflow_dispatch:
@@ -808,6 +808,80 @@ jobs:
           print("Build 14.3: one-pane paging and Build 14.2 persistence repair preserved")
           PY143
 
+          # Build 14.4: exact two-pane Inner viewport, clean Today edit controls, five-slot dock.
+          python3 - <<'PY144'
+          from pathlib import Path
+
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = hw.read_text()
+          old = """    val viewportWidth = motion.pageWidth
+              val stride = if (geometry.expanded) with(density) { (geometry.gridWidth + 16f).dp.toPx() } else viewportWidth
+              val paneStep = stride
+              val initialHomeOrigin = if (geometry.expanded) paneStep + with(density) { 16.dp.toPx() } else with(density) { panelWidth.toPx() }
+              val homePaneWidth = with(density) { (geometry.gridWidth + 16f).dp.toPx() }"""
+          new = """    val viewportWidth = motion.pageWidth
+              // Build 14.4: exactly two visible slots on the unfolded Pixel Fold.
+              val expandedRailReserve = with(density) { (geometry.homeWidth - geometry.gridWidth).coerceAtLeast(96f).dp.toPx() }
+              val paneStep = if (geometry.expanded) ((viewportWidth - expandedRailReserve - with(density) { 24.dp.toPx() }) / 2f).coerceAtLeast(with(density) { 320.dp.toPx() }) else viewportWidth
+              val stride = paneStep
+              val initialHomeOrigin = if (geometry.expanded) paneStep + with(density) { 16.dp.toPx() } else with(density) { panelWidth.toPx() }
+              val homePaneWidth = if (geometry.expanded) paneStep - with(density) { 12.dp.toPx() } else with(density) { (geometry.gridWidth + 16f).dp.toPx() }"""
+          if old not in h: raise SystemExit("Build 14.4: pager geometry block not found")
+          h = h.replace(old, new, 1)
+          h = h.replace('.width((geometry.gridWidth + 16f).dp).fillMaxHeight()', '.width(with(density) { homePaneWidth.toDp() }).fillMaxHeight()')
+          hw.write_text(h)
+
+          tv = Path("app/src/main/java/com/mccal/folio/TodayView.kt")
+          t = tv.read_text()
+          cramped = 'JigglePill(stringResource(R.string.done), emphasized = true) { edit.stop() }'
+          if cramped not in t: raise SystemExit("Build 14.4: inline Today Done control not found")
+          tv.write_text(t.replace(cramped, '', 1))
+
+          lm = Path("app/src/main/java/com/mccal/folio/LauncherModel.kt")
+          m = lm.read_text()
+          if 'val dock: List<String?> = List(4) { null },' not in m or 'val loadedDock = List(4)' not in m: raise SystemExit("Build 14.4: four-slot dock model not found")
+          m = m.replace('val dock: List<String?> = List(4) { null },', 'val dock: List<String?> = List(5) { null },', 1)
+          m = m.replace('val loadedDock = List(4) { j.optJSONArray("dock")?.optString(it)?.takeIf { it.isNotBlank() && it != "null" } }', 'val loadedDock = List(5) { j.optJSONArray("dock")?.optString(it)?.takeIf { it.isNotBlank() && it != "null" } }', 1)
+          old_groups = '            listOf("com.spotify.music", "com.google.android.apps.youtube.music"),\n        )'
+          new_groups = '            listOf("com.spotify.music", "com.google.android.apps.youtube.music"),\n            listOf("com.google.android.GoogleCamera", "com.android.camera2", "com.sec.android.app.camera"),\n        )'
+          if old_groups not in m: raise SystemExit("Build 14.4: initial dock groups not found")
+          lm.write_text(m.replace(old_groups, new_groups, 1))
+
+          hist = Path("app/src/main/java/com/mccal/folio/LayoutHistory.kt")
+          q = hist.read_text()
+          if 'List(4) { d.getOrNull(it) }' not in q: raise SystemExit("Build 14.4: history dock normalization not found")
+          hist.write_text(q.replace('List(4) { d.getOrNull(it) }', 'List(5) { d.getOrNull(it) }', 1))
+
+          backup = Path("app/src/main/java/com/mccal/folio/LayoutBackup.kt")
+          b = backup.read_text()
+          old_b = '    require(dockArray.length() == 4)\n    val rawDock = List(4) { index -> if (dockArray.isNull(index)) null else dockArray.getString(index) }'
+          new_b = '    require(dockArray.length() in 4..5)\n    val rawDock = List(5) { index -> if (index >= dockArray.length() || dockArray.isNull(index)) null else dockArray.getString(index) }'
+          if old_b not in b: raise SystemExit("Build 14.4: backup dock validation not found")
+          backup.write_text(b.replace(old_b, new_b, 1))
+
+          layout = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+          l = layout.read_text()
+          reps = {
+              'height - homeReserve - 4f * 48f - 16f - 10f - statusSpan': 'height - homeReserve - 5f * 48f - 16f - 10f - statusSpan',
+              'maxOf(4f * 48f + 16f, (if (p.dockAlignToGrid) 2f * row + icon else 256f) + 4f * dockSpace)': 'maxOf(5f * 48f + 16f, (if (p.dockAlignToGrid) 2f * row + icon else 304f) + 4f * dockSpace)',
+              '((dockHeight - 16f) / 4f).coerceAtLeast(48f)': '((dockHeight - 16f) / 5f).coerceAtLeast(48f)',
+          }
+          for a,z in reps.items():
+              if a not in l: raise SystemExit("Build 14.4: dock geometry expression missing: " + a)
+              l=l.replace(a,z,1)
+          layout.write_text(l)
+
+          h=hw.read_text(); t=tv.read_text(); m=lm.read_text(); l=layout.read_text()
+          if 'logicalPosition * paneStep' not in h or 'visibleHomePages * paneStep' not in h: raise SystemExit("Build 14.4: one-pane paging regressed")
+          if 'List(5) { null }' not in m or 'val loadedDock = List(5)' not in m: raise SystemExit("Build 14.4: five-slot dock persistence incomplete")
+          if t.count('JigglePill(stringResource(R.string.done), emphasized = true) { edit.stop() }') != 1: raise SystemExit("Build 14.4: Today should have exactly one Done control")
+          if '/ 5f).coerceAtLeast(48f)' not in l: raise SystemExit("Build 14.4: five-row dock geometry missing")
+          print("Build 14.4: Inner viewport uses exactly two adaptive pane slots")
+          print("Build 14.4: Today has one persistent Done control")
+          print("Build 14.4: dock upgraded to five persistent slots with 4-slot backup compatibility")
+          print("Build 14.4: one-pane paging and Home persistence preserved")
+          PY144
+
           git diff --check
           echo "---- Changed files ----"
           git diff --stat
@@ -872,5 +946,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 14.3 Geometry ${VERSION}. Removes the Inner left dead zone, preserves one-pane paging and repaired Home persistence, gives Today a persistent Done control, and normalizes Today and App Library to the same six-row vertical viewport as Home." \
+            --notes "Pixel Fold Build 14.4 Two-Pane + Dock 5 ${VERSION}. Fits exactly two adaptive panes on the Inner display, removes the duplicate Today Done control, preserves one-pane paging/Home persistence, and upgrades the dock to five persistent slots with old four-slot backup compatibility." \
             --latest
