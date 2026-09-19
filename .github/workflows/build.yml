@@ -1,4 +1,4 @@
-name: Build Pixel Fold APK · Build 14.1
+name: Build Pixel Fold APK · Build 14.2 Repair
 
 on:
   workflow_dispatch:
@@ -584,69 +584,46 @@ jobs:
           from pathlib import Path
           import re
 
-          # ---- TRUE 4 x 6 HOME MODEL ----
-          # Upstream schema 9 expanded pages from 24 to 36 cells (6 app rows plus two
-          # special widget rows in the renderer). Pixel Fold wants 24 universal cells.
-          # Override the core constants/functions at their source, not only the geometry.
-          roots = list(Path("app/src/main/java/com/mccal/folio").glob("*.kt"))
-          touched = []
+          # ---- HOME 4 x 6 COMPATIBILITY MODE ----
+          # IMPORTANT: keep Folio's original 36-cell persisted page schema intact.
+          # Previous 14.1 changed GRID_ROWS/HOME_CELLS and made existing layouts
+          # unreadable and app insertion fail. Build 14.2 constrains only what the
+          # Home renderer exposes; storage/indexing remains upstream-compatible.
+          from pathlib import Path
+          import re
 
-          for p in roots:
-              t = p.read_text()
-              original = t
-
-              # The upstream model's 36-cell page is 4 x 9 storage; force six rows/24 cells.
-              t = re.sub(r'const val GRID_ROWS\s*=\s*(?:9|2\s*\+\s*7)\b', 'const val GRID_ROWS = 6', t)
-              t = re.sub(r'const val HOME_CELLS\s*=\s*GRID_COLUMNS\s*\*\s*GRID_ROWS',
-                         'const val HOME_CELLS = GRID_COLUMNS * GRID_ROWS', t)
-              t = re.sub(r'const val HOME_CELLS\s*=\s*36\b', 'const val HOME_CELLS = 24', t)
-
-              # Folio's "app rows" setting used 4..7 plus two widget rows. In the universal
-              # model the renderer must always expose all six physical rows.
-              t = re.sub(
-                  r'fun shownHomeRows\([^)]*\)\s*:[^{=]+\s*=\s*[^\n]+',
-                  lambda m: m.group(0), t
-              )
-
-              if t != original:
-                  p.write_text(t)
-                  touched.append(str(p))
-
-          # Locate the constants so this workflow fails early if upstream structure changed.
-          joined = "\n".join(p.read_text() for p in roots)
-          if not re.search(r'const val GRID_ROWS\s*=\s*6\b', joined):
-              raise SystemExit("Build 14.1: GRID_ROWS was not converted to 6")
-          if not re.search(r'const val HOME_CELLS\s*=\s*(?:24|GRID_COLUMNS\s*\*\s*GRID_ROWS)', joined):
-              raise SystemExit("Build 14.1: HOME_CELLS no longer follows the six-row grid")
-
-          # Renderer: always render exactly six universal rows and stop deriving extra rows
-          # from the old app-row/widget-row split.
           hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
           h = hw.read_text()
+
+          # Render six rows on Home, but do not alter HOME_CELLS, GRID_ROWS,
+          # serialization, page indexing, or empty-cell search.
           old_shown = "    val shownRows = shownHomeRows(geometry.appRows, pageRange.map { previewAt(it) ?: savedAt(it) }, pageWidgets)"
           if old_shown in h:
               h = h.replace(old_shown, "    val shownRows = 6", 1)
           elif "    val shownRows = 6" not in h:
-              raise SystemExit("Build 14.1: SharedHomeGrid shownRows expression not found")
-
-          # All rows share the same height/pitch. This removes the remaining implicit
-          # top widget band even if an old saved widget happens to live in rows 0/1.
-          h = h.replace(
-              "    val widgetRows = pageWidgets.map { displayRow(it.row) to it.spanY }",
-              "    val widgetRows = pageWidgets.map { displayRow(it.row) to it.spanY }",
-              1
-          )
+              raise SystemExit("Build 14.2: SharedHomeGrid shownRows expression not found")
           hw.write_text(h)
 
+          # Keep all six displayed rows on a uniform pitch. This is presentation
+          # geometry only; persisted widget/app coordinates remain untouched.
           lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
           l = lm.read_text()
           l = l.replace(
               "fun pitch(row: Int) = if (row < 2 && (splitRow == null || widgetsOnTop)) topPitch else rowHeight",
               "fun pitch(row: Int) = rowHeight"
           )
-          # Build 14 passes may already have this.
-          l = l.replace("fun pitch(row: Int) = rowHeight", "fun pitch(row: Int) = rowHeight", 1)
           lm.write_text(l)
+
+          # Verify we DID NOT mutate the persisted grid constants.
+          roots = list(Path("app/src/main/java/com/mccal/folio").glob("*.kt"))
+          joined = "\n".join(p.read_text() for p in roots)
+          if re.search(r'const val GRID_ROWS\s*=\s*6\b', joined):
+              raise SystemExit("Build 14.2: persisted GRID_ROWS was incorrectly changed to 6")
+          if re.search(r'const val HOME_CELLS\s*=\s*24\b', joined):
+              raise SystemExit("Build 14.2: persisted HOME_CELLS was incorrectly changed to 24")
+
+          print("Build 14.2: original Home persistence/indexing preserved")
+          print("Build 14.2: Home presentation constrained to six universal visible rows")
 
           # ---- ONE PANE PER SWIPE ON INNER ----
           # The native pager advances a full expanded viewport. The visual panes are compact
@@ -755,9 +732,9 @@ jobs:
           l = lm.read_text()
           t = tv.read_text()
           if "val shownRows = 6" not in h:
-              raise SystemExit("Build 14.1: Home renderer is not locked to six rows")
+              raise SystemExit("Build 14.2: Home renderer is not locked to six visible rows")
           if "fun pitch(row: Int) = rowHeight" not in l:
-              raise SystemExit("Build 14.1: Home rows do not share universal pitch")
+              raise SystemExit("Build 14.2: Home visible rows do not share universal pitch")
           if "logicalPosition * paneStep" not in h and "(physicalPosition - firstHome) * paneStep" not in h:
               raise SystemExit("Build 14.1: one-pane expanded paging transform missing")
           if "visibleHomePages * paneStep" not in h:
@@ -836,5 +813,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 14.1 ${VERSION}. True 4x6 interchangeable Home grid for apps and widgets, variable Home pages, clipped scrollable Today glass panel, four-column Today widget canvas, Suggestions toggle, and corrected expanded page placement." \
+            --notes "Pixel Fold Build 14.2 Repair ${VERSION}. True 4x6 interchangeable Home grid for apps and widgets, variable Home pages, clipped scrollable Today glass panel, four-column Today widget canvas, Suggestions toggle, and corrected expanded page placement." \
             --latest
