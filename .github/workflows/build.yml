@@ -951,7 +951,7 @@ jobs:
                             } else if (page == visibleHomePages) {'''
         new = '''                    if (page == -1) {
                                 if (todayMode) {
-                                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center) {
+                                    Row(Modifier.fillMaxSize().padding(horizontal = 26.dp), horizontalArrangement = Arrangement.Center) {
                                         leftPageContent(Modifier.width((geometry.gridWidth + 16f).dp).fillMaxHeight())
                                     }
                                 } else leftPageContent(Modifier.fillMaxSize())
@@ -974,61 +974,39 @@ jobs:
         print("Build 14.7: five-icon dock, 4x6 Home, persistence and one-page paging preserved")
         PY147
 
-        # Build 14.8: use the full pager width for the two Inner slots and give Cover Today the same safe edge inset.
+        # Build 14.8.3: reclaim Inner width. Cover Today inset is applied directly in the proven Build 14.7 branch above.
         python3 - <<'PY148'
         from pathlib import Path
 
         hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
         h = hw.read_text()
-        old = '''    val expandedRailReserve = with(density) { (geometry.homeWidth - geometry.gridWidth).coerceAtLeast(96f).dp.toPx() }
+        old = """    val expandedRailReserve = with(density) { (geometry.homeWidth - geometry.gridWidth).coerceAtLeast(96f).dp.toPx() }
             val expandedOuterInset = with(density) { 12.dp.toPx() }
             val expandedGutter = with(density) { 16.dp.toPx() }
-            val expandedUsableWidth = (viewportWidth - expandedRailReserve - 2f * expandedOuterInset).coerceAtLeast(with(density) { 640.dp.toPx() })'''
-        new = '''    // pagerWidth already excludes the stationary dock/status rail. Do not reserve it twice.
+            val expandedUsableWidth = (viewportWidth - expandedRailReserve - 2f * expandedOuterInset).coerceAtLeast(with(density) { 640.dp.toPx() })"""
+        new = """    // pagerWidth already excludes the stationary dock/status rail. Do not reserve it twice.
             val expandedRailReserve = 0f
             val expandedOuterInset = with(density) { 18.dp.toPx() }
             val expandedGutter = with(density) { 16.dp.toPx() }
-            val expandedUsableWidth = (viewportWidth - 2f * expandedOuterInset).coerceAtLeast(with(density) { 640.dp.toPx() })'''
+            val expandedUsableWidth = (viewportWidth - 2f * expandedOuterInset).coerceAtLeast(with(density) { 640.dp.toPx() })"""
         if old not in h:
-            raise SystemExit("Build 14.8: Build 14.7 Inner geometry block not found")
+            raise SystemExit("Build 14.8.3: Build 14.7 Inner geometry block not found")
         h = h.replace(old, new, 1)
         hw.write_text(h)
 
-        ls = Path("app/src/main/java/com/mccal/folio/LauncherScreen.kt")
-        s = ls.read_text()
-        import re
-        cover_pattern = re.compile(
-            r"(?P<indent>^[ \t]*)if \(todayMode\) \{\s*"
-            r"Row\(Modifier\.fillMaxSize\(\), horizontalArrangement = Arrangement\.Center\) \{\s*"
-            r"leftPageContent\(Modifier\.width\(\(geometry\.gridWidth \+ 16f\)\.dp\)\.fillMaxHeight\(\)\)\s*"
-            r"\}\s*else leftPageContent\(Modifier\.fillMaxSize\(\)\)",
-            re.MULTILINE,
-        )
-        match = cover_pattern.search(s)
-        if not match:
-            raise SystemExit("Build 14.8.2: Build 14.7 Cover Today host not found")
-        indent = match.group("indent")
-        replacement = (
-            f"{indent}if (todayMode) {{\n"
-            f"{indent}    // Match the safe horizontal breathing room used by Cover Home/Library.\n"
-            f"{indent}    leftPageContent(Modifier.fillMaxSize().padding(horizontal = 26.dp))\n"
-            f"{indent}}} else leftPageContent(Modifier.fillMaxSize())"
-        )
-        s = s[:match.start()] + replacement + s[match.end():]
-        ls.write_text(s)
-
         final_h = hw.read_text()
         if 'val expandedRailReserve = 0f' not in final_h:
-            raise SystemExit("Build 14.8: duplicate Inner rail reserve still active")
+            raise SystemExit("Build 14.8.3: duplicate Inner rail reserve still active")
         if 'val expandedOuterInset = with(density) { 18.dp.toPx() }' not in final_h:
-            raise SystemExit("Build 14.8: Inner outer inset missing")
+            raise SystemExit("Build 14.8.3: Inner outer inset missing")
         if 'expandedClipWidth' not in final_h or 'clipToBounds()' not in final_h:
-            raise SystemExit("Build 14.8: two-slot clipping regressed")
-        if 'padding(horizontal = 26.dp)' not in ls.read_text():
-            raise SystemExit("Build 14.8: Cover Today safe inset missing")
-        print("Build 14.8: Inner consumes the full pager width without double-reserving the dock rail")
-        print("Build 14.8: Inner keeps hard two-slot clipping with balanced outer margins")
-        print("Build 14.8: Cover Today gets a safe inset while Cover Home/Library sizing stays unchanged")
+            raise SystemExit("Build 14.8.3: two-slot clipping regressed")
+        ls = Path("app/src/main/java/com/mccal/folio/LauncherScreen.kt").read_text()
+        if 'Row(Modifier.fillMaxSize().padding(horizontal = 26.dp), horizontalArrangement = Arrangement.Center)' not in ls:
+            raise SystemExit("Build 14.8.3: Cover Today inset missing from Build 14.7 branch")
+        print("Build 14.8.3: Inner consumes the full pager width without double-reserving the dock rail")
+        print("Build 14.8.3: hard two-slot clipping preserved")
+        print("Build 14.8.3: Cover Today inset is applied in the existing Build 14.7 branch; no secondary host lookup")
         PY148
 
         git diff --check
@@ -1082,5 +1060,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.8.2 Balanced Slots ${VERSION}. Keeps the hard two-slot Inner clip, removes the duplicate rail-width reservation so both panes fill the usable display, balances Inner outer margins, and fixes the Cover Today left inset while preserving Cover Home/Library sizing and the five-icon dock." \
+          --notes "Pixel Fold Build 14.8.3 Balanced Slots ${VERSION}. Keeps the hard two-slot Inner clip, removes the duplicate rail-width reservation so both panes fill the usable display, balances Inner outer margins, and applies the Cover Today inset directly in the proven 14.7 branch while preserving Cover Home/Library sizing and the five-icon dock." \
           --latest
