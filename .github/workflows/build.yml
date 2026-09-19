@@ -1016,7 +1016,7 @@ jobs:
 
         cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
         c = cats.read_text()
-        # Build 14.12.2: make the Compose draggable extension explicitly available
+        # Build 14.12.3: make the Compose draggable extension explicitly available
         # to LibraryCategories.kt instead of relying on its existing imports.
         if "import androidx.compose.foundation.gestures.draggable" not in c:
             package_end = c.find("\n", c.find("package "))
@@ -1151,7 +1151,7 @@ jobs:
         lib.write_text(a)
 
 
-        # Build 14.12.2: keep every animated folder page measurable.
+        # Build 14.12.3: keep every animated folder page measurable.
         c = cats.read_text()
         old_strip = '''Row(
                             Modifier.fillMaxSize()
@@ -1176,8 +1176,8 @@ jobs:
         fw = "val width = if (widget.size.columns >= 2) cell * 2 + gap else cell * 2 + gap"
         fh = "val height = cell * 2 + gap"
         if fw not in t or fh not in t: raise SystemExit("14.12: forced Today sizing missing")
-        t = t.replace(fw, "val spanColumns = (widget.size.columns * 2).coerceIn(2, 4)\\n                                val width = cell * spanColumns + gap * (spanColumns - 1)", 1)
-        t = t.replace(fh, "val spanRows = widget.size.rows.coerceIn(1, 2)\\n                                val height = cell * spanRows + gap * (spanRows - 1)", 1)
+        t = t.replace(fw, "val spanColumns = (widget.size.columns * 2).coerceIn(2, 4)\n                                val width = cell * spanColumns + gap * (spanColumns - 1)", 1)
+        t = t.replace(fh, "val spanRows = widget.size.rows.coerceIn(1, 2)\n                                val height = cell * spanRows + gap * (spanRows - 1)", 1)
         t = t.replace("val used = last?.sumOf { 2 } ?: 4", "val used = last?.sumOf { it.size.columns * 2 } ?: 4", 1)
         t = t.replace("if (last != null && used + 2 <= 4) last += widget",
                       "if (last != null && used + widget.size.columns * 2 <= 4 && last.all { it.size.rows == widget.size.rows }) last += widget", 1)
@@ -1187,13 +1187,13 @@ jobs:
         t=t.replace(sig,"onRemove: (Int) -> Unit, onMove: (Int, Int) -> Unit, onResize: (Int, TodaySize) -> Unit) {",1)
         call="onRemove = { onRemove(widget.id) }, onMove = { onMove(widget.id, it) })"
         if call not in t: raise SystemExit("14.12: tile call missing")
-        t=t.replace(call,"onRemove = { onRemove(widget.id) }, onMove = { onMove(widget.id, it) },\\n                                    onResize = { onResize(widget.id, it) })",1)
+        t=t.replace(call,"onRemove = { onRemove(widget.id) }, onMove = { onMove(widget.id, it) },\n                                    onResize = { onResize(widget.id, it) })",1)
         ts="canMoveUp: Boolean, canMoveDown: Boolean, onRemove: () -> Unit, onMove: (Int) -> Unit) {"
         if ts not in t: raise SystemExit("14.12: tile signature missing")
         t=t.replace(ts,"canMoveUp: Boolean, canMoveDown: Boolean, onRemove: () -> Unit, onMove: (Int) -> Unit, onResize: (TodaySize) -> Unit) {",1)
 
         remove_line = '            JiggleRemoveButton("Remove widget", onRemove = onRemove)'
-        if remove_line not in t: raise SystemExit("14.12.2: widget remove control missing")
+        if remove_line not in t: raise SystemExit("14.12.3: widget remove control missing")
         resize_control = """            Box(Modifier.align(Alignment.BottomStart).padding(8.dp).clip(CircleShape)
                 .background(Color.Black.copy(alpha = .55f)).clickable(onClickLabel = "Resize widget") {
                     val next = when (widget.size) {
@@ -1209,16 +1209,17 @@ jobs:
                     TodaySize.LARGE -> "4×2"
                 }, color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }"""
-        t=t.replace(remove_line, remove_line + "\\n" + resize_control, 1)
+        t=t.replace(remove_line, remove_line + "\n" + resize_control, 1)
 
-        # 14.12.2: do not exact-match/rebuild the AndroidView host here.
-        # The Today tile itself is resized from the persisted TodaySize; host option
-        # synchronization can be added after the core resize UI is stable.
+        # 14.12.3: write TodayView edits before verification.
+        tv.write_text(t)
+
+        # Keep the host-view patch deferred until core resize behavior is stable.
 
         model=Path("app/src/main/java/com/mccal/folio/LauncherModel.kt"); m=model.read_text()
         ml="fun moveTodayWidget(id: Int, delta: Int) = updateSettings(soon = false) { it.copy(todayWidgets = TodayWidgets.move(it.todayWidgets, id, delta)) }"
         if ml not in m: raise SystemExit("14.12: model move missing")
-        resize_method = "\\n    fun resizeTodayWidget(id: Int, size: TodaySize) = updateSettings(soon = false) { settings ->\\n        settings.copy(todayWidgets = settings.todayWidgets.map { if (it.id == id) it.copy(size = size) else it })\\n    }"
+        resize_method = "\n    fun resizeTodayWidget(id: Int, size: TodaySize) = updateSettings(soon = false) { settings ->\n        settings.copy(todayWidgets = settings.todayWidgets.map { if (it.id == id) it.copy(size = size) else it })\n    }"
         m=m.replace(ml, ml + resize_method, 1)
         model.write_text(m)
 
@@ -1231,12 +1232,12 @@ jobs:
         c=cats.read_text(); t=tv.read_text()
         if 'Modifier.width((286 * pages).dp).fillMaxHeight()' not in c: raise SystemExit("14.12: page strip check failed")
         if 'Resize widget' not in t or 'widget.size.columns * 2' not in t: raise SystemExit("14.12: Today resize check failed")
-        print("Build 14.12.2: folder pages retain content while sliding")
-        print("Build 14.12.2: Today sizes map to 2x1 / 4x1 / 4x2 and can be cycled in Edit mode")
+        print("Build 14.12.3: folder pages retain content while sliding")
+        print("Build 14.12.3: Today sizes map to 2x1 / 4x1 / 4x2 and can be cycled in Edit mode")
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
         if 'rememberDraggableState' not in c or 'Orientation.Horizontal' not in c or 'animateFloatAsState' not in c or 'translationX = pageOffset.value + swipeDistance.value' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.12: animated swipe 3x3 folder verification failed")
-        print("Build 14.12.2: compact square 3x3 folders, interactive animated horizontal paging, dot indicators")
+        print("Build 14.12.3: compact square 3x3 folders, interactive animated horizontal paging, dot indicators")
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
@@ -1291,5 +1292,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.12.2 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 14.12.3 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
