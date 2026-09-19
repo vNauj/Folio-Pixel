@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 14.7 Full Two-Slot"
+name: "Build Pixel Fold APK · Build 14.9 Cover Today Height"
 on:
   workflow_dispatch:
 permissions:
@@ -951,7 +951,7 @@ jobs:
                             } else if (page == visibleHomePages) {'''
         new = '''                    if (page == -1) {
                                 if (todayMode) {
-                                    Row(Modifier.fillMaxSize().padding(horizontal = 26.dp), horizontalArrangement = Arrangement.Center) {
+                                    Row(Modifier.fillMaxSize().padding(horizontal = 26.dp).padding(top = geometry.contentTop.dp, bottom = (contentHeight - geometry.contentTop.dp - (geometry.rowHeight * 6f).dp).coerceAtLeast(0.dp)), horizontalArrangement = Arrangement.Center) {
                                         leftPageContent(Modifier.width((geometry.gridWidth + 16f).dp).fillMaxHeight())
                                     }
                                 } else leftPageContent(Modifier.fillMaxSize())
@@ -1002,11 +1002,11 @@ jobs:
         if 'expandedClipWidth' not in final_h or 'clipToBounds()' not in final_h:
             raise SystemExit("Build 14.8.3: two-slot clipping regressed")
         ls = Path("app/src/main/java/com/mccal/folio/LauncherScreen.kt").read_text()
-        if 'Row(Modifier.fillMaxSize().padding(horizontal = 26.dp), horizontalArrangement = Arrangement.Center)' not in ls:
+        if 'Row(Modifier.fillMaxSize().padding(horizontal = 26.dp).padding(top = geometry.contentTop.dp, bottom = (contentHeight - geometry.contentTop.dp - (geometry.rowHeight * 6f).dp).coerceAtLeast(0.dp)), horizontalArrangement = Arrangement.Center)' not in ls:
             raise SystemExit("Build 14.8.3: Cover Today inset missing from Build 14.7 branch")
         print("Build 14.8.3: Inner consumes the full pager width without double-reserving the dock rail")
         print("Build 14.8.3: hard two-slot clipping preserved")
-        print("Build 14.8.3: Cover Today inset is applied in the existing Build 14.7 branch; no secondary host lookup")
+        print("Build 14.9: Cover Today uses the same six-row vertical viewport as Cover App Library while remaining internally scrollable")
         PY148
 
         git diff --check
@@ -1060,5 +1060,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.8.3 Balanced Slots ${VERSION}. Keeps the hard two-slot Inner clip, removes the duplicate rail-width reservation so both panes fill the usable display, balances Inner outer margins, and applies the Cover Today inset directly in the proven 14.7 branch while preserving Cover Home/Library sizing and the five-icon dock." \
+          --notes "Pixel Fold Build 14.9 Cover Today Height ${VERSION}. Keeps Build 14.8.3 geometry intact and changes only the Cover Today host to use the same six-row vertical viewport as Cover App Library, preserving internal Today scrolling, Inner paging/clipping, Home, App Library, and the five-icon dock." \
           --latest
