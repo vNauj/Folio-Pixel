@@ -596,7 +596,7 @@ jobs:
               original = t
 
               # The upstream model's 36-cell page is 4 x 9 storage; force six rows/24 cells.
-              t = re.sub(r'const val GRID_ROWS\s*=\s*9\b', 'const val GRID_ROWS = 6', t)
+              t = re.sub(r'const val GRID_ROWS\s*=\s*(?:9|2\s*\+\s*7)\b', 'const val GRID_ROWS = 6', t)
               t = re.sub(r'const val HOME_CELLS\s*=\s*GRID_COLUMNS\s*\*\s*GRID_ROWS',
                          'const val HOME_CELLS = GRID_COLUMNS * GRID_ROWS', t)
               t = re.sub(r'const val HOME_CELLS\s*=\s*36\b', 'const val HOME_CELLS = 24', t)
@@ -614,8 +614,10 @@ jobs:
 
           # Locate the constants so this workflow fails early if upstream structure changed.
           joined = "\n".join(p.read_text() for p in roots)
-          if not re.search(r'(?:const val GRID_ROWS\s*=\s*6|const val HOME_CELLS\s*=\s*24)', joined):
-              raise SystemExit("Build 14.1: could not establish six-row/24-cell Home constants")
+          if not re.search(r'const val GRID_ROWS\s*=\s*6\b', joined):
+              raise SystemExit("Build 14.1: GRID_ROWS was not converted to 6")
+          if not re.search(r'const val HOME_CELLS\s*=\s*(?:24|GRID_COLUMNS\s*\*\s*GRID_ROWS)', joined):
+              raise SystemExit("Build 14.1: HOME_CELLS no longer follows the six-row grid")
 
           # Renderer: always render exactly six universal rows and stop deriving extra rows
           # from the old app-row/widget-row split.
