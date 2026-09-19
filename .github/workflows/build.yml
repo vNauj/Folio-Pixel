@@ -656,12 +656,14 @@ jobs:
 
           # In ExpandedWorkspace, use one home-pane stride as the pager's effective movement.
           # This deliberately leaves Cover untouched.
-          marker = "    val viewportWidth = motion.pageWidth\n    val stride = motion.homeStride"
-          replacement = """    val viewportWidth = motion.pageWidth
-              val stride = motion.homeStride
-              val paneStep = with(density) { (geometry.gridWidth + 16f).dp.toPx() }"""
-          if marker in h:
-              h = h.replace(marker, replacement, 1)
+          # Build 13 already rewrites stride to one compact pane on expanded displays.
+          # Accept either upstream or already-patched form and make paneStep follow it.
+          upstream_marker = "    val viewportWidth = motion.pageWidth\n    val stride = motion.homeStride"
+          patched_marker = "    val viewportWidth = motion.pageWidth\n    val stride = if (geometry.expanded) with(density) { (geometry.gridWidth + 16f).dp.toPx() } else viewportWidth"
+          if patched_marker in h:
+              h = h.replace(patched_marker, patched_marker + "\n    val paneStep = stride", 1)
+          elif upstream_marker in h:
+              h = h.replace(upstream_marker, upstream_marker + "\n    val paneStep = with(density) { (geometry.gridWidth + 16f).dp.toPx() }", 1)
           elif "val paneStep =" not in h:
               raise SystemExit("Build 14.1: ExpandedWorkspace stride block not found")
 
