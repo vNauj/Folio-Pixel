@@ -984,7 +984,7 @@ jobs:
             val expandedOuterInset = with(density) { 12.dp.toPx() }
             val expandedGutter = with(density) { 16.dp.toPx() }
             val expandedUsableWidth = (viewportWidth - expandedRailReserve - 2f * expandedOuterInset).coerceAtLeast(with(density) { 640.dp.toPx() })'''
-                new = '''    // pagerWidth already excludes the stationary dock/status rail. Do not reserve it twice.
+        new = '''    // pagerWidth already excludes the stationary dock/status rail. Do not reserve it twice.
             val expandedRailReserve = 0f
             val expandedOuterInset = with(density) { 18.dp.toPx() }
             val expandedGutter = with(density) { 16.dp.toPx() }
