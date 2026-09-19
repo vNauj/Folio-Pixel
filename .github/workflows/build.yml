@@ -886,8 +886,45 @@ jobs:
           print("Build 14.4: one-pane paging and Home persistence preserved")
           PY144
 
+          # Build 14.5: one shared two-slot coordinate system for every Inner page.
+          python3 - <<'PY145'
+          from pathlib import Path
+
+          hw = Path("app/src/main/java/com/mccal/folio/HomeWorkspace.kt")
+          h = hw.read_text()
+          old = '''    val viewportWidth = motion.pageWidth
+              // Build 14.4: exactly two visible slots on the unfolded Pixel Fold.
+              val expandedRailReserve = with(density) { (geometry.homeWidth - geometry.gridWidth).coerceAtLeast(96f).dp.toPx() }
+              val paneStep = if (geometry.expanded) ((viewportWidth - expandedRailReserve - with(density) { 24.dp.toPx() }) / 2f).coerceAtLeast(with(density) { 320.dp.toPx() }) else viewportWidth
+              val stride = paneStep
+              val initialHomeOrigin = if (geometry.expanded) paneStep + with(density) { 16.dp.toPx() } else with(density) { panelWidth.toPx() }
+              val homePaneWidth = if (geometry.expanded) paneStep - with(density) { 12.dp.toPx() } else with(density) { (geometry.gridWidth + 16f).dp.toPx() }'''
+          new = '''    val viewportWidth = motion.pageWidth
+              // Build 14.5: every page uses the same two physical Inner slots.
+              // Keep the Home slot as the source of truth for the outside margins.
+              val expandedRailReserve = with(density) { (geometry.homeWidth - geometry.gridWidth).coerceAtLeast(96f).dp.toPx() }
+              val expandedOuterInset = with(density) { 22.dp.toPx() }
+              val expandedGutter = with(density) { 22.dp.toPx() }
+              val expandedUsableWidth = (viewportWidth - expandedRailReserve - 2f * expandedOuterInset).coerceAtLeast(with(density) { 640.dp.toPx() })
+              val homePaneWidth = if (geometry.expanded) ((expandedUsableWidth - expandedGutter) / 2f) else with(density) { (geometry.gridWidth + 16f).dp.toPx() }
+              val paneStep = if (geometry.expanded) homePaneWidth + expandedGutter else viewportWidth
+              val stride = paneStep
+              val initialHomeOrigin = if (geometry.expanded) expandedOuterInset + paneStep else with(density) { panelWidth.toPx() }'''
+          if old not in h:
+              raise SystemExit("Build 14.5: Build 14.4 shared geometry block not found")
+          h = h.replace(old, new, 1)
+          h = h.replace('val leadingX = initialHomeOrigin - paneStep', 'val leadingX = if (geometry.expanded) expandedOuterInset else initialHomeOrigin - paneStep', 1)
+          if 'val expandedUsableWidth' not in h or 'val expandedGutter' not in h:
+              raise SystemExit("Build 14.5: shared slot metrics missing")
+          if 'visibleHomePages * paneStep' not in h or 'logicalPosition * paneStep' not in h:
+              raise SystemExit("Build 14.5: one-pane pager chain regressed")
+          hw.write_text(h)
+          print("Build 14.5: Today/Home/Library share identical Inner slot bounds")
+          print("Build 14.5: one-pane movement and five-icon dock preserved")
+          PY145
+
           git diff --check
-          echo "---- Changed files ----"
+          echo "---- Changed files ----
           git diff --stat
           echo "---- Pixel Fold controls found ----"
           grep -n "Pixel Fold Layout\|Home vertical position\|Dock vertical position"             app/src/main/java/com/mccal/folio/CustomizationSheet.kt
@@ -950,5 +987,5 @@ jobs:
           gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
             --repo vNauj/Folio-Pixel \
             --title "Folio Pixel Fold ${VERSION}" \
-            --notes "Pixel Fold Build 14.4 Two-Pane + Dock 5 ${VERSION}. Fits exactly two adaptive panes on the Inner display, removes the duplicate Today Done control, preserves one-pane paging/Home persistence, and upgrades the dock to five persistent slots with old four-slot backup compatibility." \
+            --notes "Pixel Fold Build 14.5 Shared Pane Bounds ${VERSION}. Uses one shared Home-referenced two-slot coordinate system for Today, Home, and App Library on Inner while preserving one-pane paging, Cover behavior, Home persistence, and the five-icon dock." \
             --latest
