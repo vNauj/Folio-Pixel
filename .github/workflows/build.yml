@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 14.9 Cover Today Height"
+name: "Build Pixel Fold APK · Build 14.10 App Library"
 on:
   workflow_dispatch:
 permissions:
@@ -1006,8 +1006,119 @@ jobs:
             raise SystemExit("Build 14.8.3: Cover Today inset missing from Build 14.7 branch")
         print("Build 14.8.3: Inner consumes the full pager width without double-reserving the dock rail")
         print("Build 14.8.3: hard two-slot clipping preserved")
+
         print("Build 14.9: Cover Today uses the same six-row vertical viewport as Cover App Library while remaining internally scrollable")
         PY148
+
+        # Build 14.10: App Library interaction + Apple-style taxonomy. 14.9 geometry is frozen.
+        python3 - <<'PY1410'
+        from pathlib import Path
+
+        cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
+        c = cats.read_text()
+        old = '    SUGGESTIONS("Suggestions"), SOCIAL("Social"), PRODUCTIVITY("Productivity & Finance"), CREATIVITY("Photo & Video"),\n    ENTERTAINMENT("Entertainment"), GAMES("Games"), INFO("Information & Reading"), TRAVEL("Travel & Maps"),\n    SHOPPING("Shopping & Food"), UTILITIES("Utilities"), OTHER("Other");'
+        new = '    SUGGESTIONS("Suggestions"), RECENTLY_ADDED("Recently Added"), SOCIAL("Social"), UTILITIES("Utilities"),\n    PRODUCTIVITY("Productivity"), FINANCE("Finance"), CREATIVITY("Creativity"), SHOPPING("Shopping & Food"),\n    INFO("Information & Reading"), TRAVEL("Travel"), ENTERTAINMENT("Entertainment"), MUSIC("Music"),\n    GAMES("Games"), DEVELOPER("Developer"), OTHER("Other");'
+        if old not in c: raise SystemExit("14.10: category enum body not found")
+        c = c.replace(old, new, 1)
+        c = c.replace('ApplicationInfo.CATEGORY_AUDIO -> return ENTERTAINMENT', 'ApplicationInfo.CATEGORY_AUDIO -> return MUSIC', 1)
+        oldh = 'hint(p, "mail", "gmail", "calendar", "office", "docs", "sheets", "notes", "drive", "bank", "pay", "wallet", "finance", "cash", "venmo", "chatgpt", "claude", "perplexity", "bard", "calendly") -> PRODUCTIVITY\n                hint(p, "spotify", "music", "youtube", "netflix", "hulu", "disney", "twitch", "podcast", "audible", "tv") -> ENTERTAINMENT'
+        newh = 'hint(p, "bank", "wellsfargo", "chase", "capitalone", "amex", "paypal", "venmo", "cashapp", "cash", "wallet", "finance", "fidelity", "schwab", "robinhood") -> FINANCE\n                hint(p, "mail", "gmail", "calendar", "office", "docs", "sheets", "notes", "drive", "chatgpt", "claude", "perplexity", "bard", "calendly") -> PRODUCTIVITY\n                hint(p, "spotify", "music", "pandora", "tidal", "soundcloud", "podcast", "audible") -> MUSIC\n                hint(p, "youtube", "netflix", "hulu", "disney", "twitch", "tv", "primevideo") -> ENTERTAINMENT'
+        if oldh not in c: raise SystemExit("14.10: category hints not found")
+        c = c.replace(oldh, newh, 1)
+
+        sig='internal fun CategoryCard(title: String, apps: List<AppEntry>, modifier: Modifier, labelColor: Color = Color.White, onLaunch: (AppEntry) -> Unit, onOpen: () -> Unit) {'
+        sig2='internal fun CategoryCard(title: String, apps: List<AppEntry>, modifier: Modifier, labelColor: Color = Color.White, drag: HomeDragState? = null, page: Int? = null, onLaunch: (AppEntry) -> Unit, onOpen: () -> Unit) {'
+        if sig not in c: raise SystemExit("14.10: CategoryCard signature missing")
+        c=c.replace(sig,sig2,1)
+        icon='AppIcon(big[index], big[index].label, Modifier.size(cell)\n                                .clickable { onLaunch(big[index]) }, shape = RoundedCornerShape(cell * .24f))'
+        icon2='AppIcon(big[index], big[index].label, Modifier.size(cell)\n                                .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(big[index].id), big[index].id, page) else Modifier)\n                                .clickable { onLaunch(big[index]) }, shape = RoundedCornerShape(cell * .24f))'
+        if icon not in c: raise SystemExit("14.10: CategoryCard icon missing")
+        c=c.replace(icon,icon2,1)
+
+        start=c.find('@Composable\ninternal fun CategoryFolder(')
+        if start<0: raise SystemExit("14.10: folder missing")
+        brace=c.find('{',start); depth=0; end=None
+        for i in range(brace,len(c)):
+            if c[i]=='{': depth+=1
+            elif c[i]=='}':
+                depth-=1
+                if depth==0: end=i+1; break
+        if end is None: raise SystemExit("14.10: folder end missing")
+        folder=r'''@Composable
+        internal fun CategoryFolder(title: String, apps: List<AppEntry>, onDismiss: () -> Unit, onLaunch: (AppEntry) -> Unit,
+            onActions: (AppEntry) -> Unit, drag: HomeDragState? = null, page: Int? = null) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        FolioDialogWindow(dim = 0f, blurRadiusDp = 24)
+        val appear = rememberEntrance(stiffness = 600f, dampingRatio = .82f)
+        var folderPage by remember(title, apps) { mutableIntStateOf(0) }
+        val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
+        val shown = apps.drop(folderPage.coerceIn(0, pages - 1) * 9).take(9)
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .45f))
+            .clickable(androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
+            .testTag("category-folder-scrim"))
+        FoldAvoidingBox(Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing).padding(24.dp)) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(Modifier.widthIn(max = 360.dp).fillMaxWidth(.86f).graphicsLayer {
+                    alpha = appear.value; scaleX = .9f + .1f * appear.value; scaleY = scaleX
+                }) {
+                    Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
+                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp))
+                        .background(Color(0xFF2C2C2E).copy(alpha = .96f)).border(FolioGlass.edge, RoundedCornerShape(30.dp))
+                        .padding(18.dp).pointerInput(Unit) { detectTapGestures() }.testTag("category-folder"),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        shown.chunked(3).forEach { row ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                row.forEach { app ->
+                                    Column(Modifier.width(88.dp).clip(RoundedCornerShape(14.dp))
+                                        .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(app.id), app.id, page) else Modifier)
+                                        .combinedClickable(onLongClick = { onActions(app) }) { onLaunch(app) }.padding(vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally) {
+                                        AppIcon(app, null, Modifier.size(54.dp), shape = RoundedCornerShape(13.dp))
+                                        Text(app.label, color = Color.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp))
+                                    }
+                                }
+                                repeat(3 - row.size) { Spacer(Modifier.width(88.dp)) }
+                            }
+                        }
+                        if (pages > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { if (folderPage > 0) folderPage-- }, enabled = folderPage > 0) { Icon(Icons.Rounded.ChevronLeft, "Previous", tint = Color.White) }
+                            Text("${folderPage + 1} / $pages", color = Color.White.copy(alpha = .72f), fontSize = 11.sp)
+                            IconButton(onClick = { if (folderPage < pages - 1) folderPage++ }, enabled = folderPage < pages - 1) { Icon(Icons.Rounded.ChevronRight, "Next", tint = Color.White) }
+                        }
+                    }
+                }
+            }
+        }
+            }
+        }'''
+        c=c[:start]+folder+c[end:]
+        cats.write_text(c)
+
+        lib=Path("app/src/main/java/com/mccal/folio/AppLibrary.kt"); a=lib.read_text()
+        oldg='val suggestions = RecentApps.load(context).mapNotNull(byId::get).take(8)\n            val grouped = visibleApps.groupBy { LibraryCategory.of(pm, it.component.packageName) }'
+        newg='val suggestions = RecentApps.load(context).mapNotNull(byId::get).take(8)\n            val recentlyAdded = visibleApps.sortedByDescending { app -> runCatching { pm.getPackageInfo(app.component.packageName, 0).firstInstallTime }.getOrDefault(0L) }.take(8)\n            val grouped = visibleApps.groupBy { LibraryCategory.of(pm, it.component.packageName) }'
+        if oldg not in a: raise SystemExit("14.10: grouping block missing")
+        a=a.replace(oldg,newg,1)
+        a=a.replace('if (suggestions.isNotEmpty()) put(LibraryCategory.SUGGESTIONS, suggestions)',
+                    'if (suggestions.isNotEmpty()) put(LibraryCategory.SUGGESTIONS, suggestions)\n                if (recentlyAdded.isNotEmpty()) put(LibraryCategory.RECENTLY_ADDED, recentlyAdded)',1)
+        oldfc='CategoryFolder(category.title, categorized[category].orEmpty(), onDismiss = { openCategory = null },\n            onLaunch = { openCategory = null; onLaunchFrom(it, null) }, onActions = { openCategory = null; onActions(it) })'
+        newfc='CategoryFolder(category.title, categorized[category].orEmpty(), onDismiss = { openCategory = null },\n            onLaunch = { openCategory = null; onLaunchFrom(it, null) }, onActions = { openCategory = null; onActions(it) }, drag = drag, page = page)'
+        if oldfc not in a: raise SystemExit("14.10: folder call missing")
+        a=a.replace(oldfc,newfc,1)
+        oldcc='CategoryCard(cat.title, apps, Modifier.weight(1f), labelColor = ink, onLaunch = { onLaunchFrom(it, null) }) { openCategory = cat }'
+        newcc='CategoryCard(cat.title, apps, Modifier.weight(1f), labelColor = ink, drag = drag, page = page, onLaunch = { onLaunchFrom(it, null) }) { openCategory = cat }'
+        if oldcc not in a: raise SystemExit("14.10: card call missing")
+        a=a.replace(oldcc,newcc,1)
+        lib.write_text(a)
+
+        if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
+        if 'drop(folderPage.coerceIn(0, pages - 1) * 9).take(9)' not in c or 'shown.chunked(3)' not in c: raise SystemExit("14.10: 3x3 paging incomplete")
+        print("Build 14.10: Apple-style labels/sorting, draggable category icons, compact 3x3 paginated folders")
+        print("Build 14.10: Build 14.9 geometry untouched")
+        PY1410
 
         git diff --check
         echo "---- Changed files ----"
@@ -1060,5 +1171,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.9 Cover Today Height ${VERSION}. Keeps Build 14.8.3 geometry intact and changes only the Cover Today host to use the same six-row vertical viewport as Cover App Library, preserving internal Today scrolling, Inner paging/clipping, Home, App Library, and the five-icon dock." \
+          --notes "Pixel Fold Build 14.10 App Library ${VERSION}. Preserves Build 14.9 geometry; adds Apple-style App Library labels/sorting, draggable category-card apps, and compact 3x3 paginated category folders." \
           --latest
