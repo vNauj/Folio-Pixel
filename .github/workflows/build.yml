@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 14.10 App Library"
+name: "Build Pixel Fold APK · Build 14.10.1 App Library Fix"
 on:
   workflow_dispatch:
 permissions:
@@ -1108,10 +1108,11 @@ jobs:
         newfc='CategoryFolder(category.title, categorized[category].orEmpty(), onDismiss = { openCategory = null },\n            onLaunch = { openCategory = null; onLaunchFrom(it, null) }, onActions = { openCategory = null; onActions(it) }, drag = drag, page = page)'
         if oldfc not in a: raise SystemExit("14.10: folder call missing")
         a=a.replace(oldfc,newfc,1)
-        oldcc='CategoryCard(cat.title, apps, Modifier.weight(1f), labelColor = ink, onLaunch = { onLaunchFrom(it, null) }) { openCategory = cat }'
-        newcc='CategoryCard(cat.title, apps, Modifier.weight(1f), labelColor = ink, drag = drag, page = page, onLaunch = { onLaunchFrom(it, null) }) { openCategory = cat }'
-        if oldcc not in a: raise SystemExit("14.10: card call missing")
-        a=a.replace(oldcc,newcc,1)
+        import re
+        card_pattern = r'CategoryCard\(cat\.title,\s*apps,\s*Modifier\.weight\(1f\),\s*labelColor\s*=\s*ink,\s*onLaunch\s*=\s*\{\s*onLaunchFrom\(it,\s*null\)\s*\}\s*\)\s*\{\s*openCategory\s*=\s*cat\s*\}'
+        card_replacement = 'CategoryCard(cat.title, apps, Modifier.weight(1f), labelColor = ink, drag = drag, page = page, onLaunch = { onLaunchFrom(it, null) }) { openCategory = cat }'
+        a, card_count = re.subn(card_pattern, card_replacement, a, count=1)
+        if card_count != 1: raise SystemExit(f"14.10.1: expected one CategoryCard call, found {card_count}")
         lib.write_text(a)
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
