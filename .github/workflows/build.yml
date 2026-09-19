@@ -1016,6 +1016,11 @@ jobs:
 
         cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
         c = cats.read_text()
+        # Build 14.11.3: make the Compose draggable extension explicitly available
+        # to LibraryCategories.kt instead of relying on its existing imports.
+        if "import androidx.compose.foundation.gestures.draggable" not in c:
+            package_end = c.find("\n", c.find("package "))
+            c = c[:package_end + 1] + "import androidx.compose.foundation.gestures.draggable\n" + c[package_end + 1:]
         old = '    SUGGESTIONS("Suggestions"), SOCIAL("Social"), PRODUCTIVITY("Productivity & Finance"), CREATIVITY("Photo & Video"),\n    ENTERTAINMENT("Entertainment"), GAMES("Games"), INFO("Information & Reading"), TRAVEL("Travel & Maps"),\n    SHOPPING("Shopping & Food"), UTILITIES("Utilities"), OTHER("Other");'
         new = '    SUGGESTIONS("Suggestions"), RECENTLY_ADDED("Recently Added"), SOCIAL("Social"), UTILITIES("Utilities"),\n    PRODUCTIVITY("Productivity"), FINANCE("Finance"), CREATIVITY("Creativity"), SHOPPING("Shopping & Food"),\n    INFO("Information & Reading"), TRAVEL("Travel"), ENTERTAINMENT("Entertainment"), MUSIC("Music"),\n    GAMES("Games"), DEVELOPER("Developer"), OTHER("Other");'
         if old not in c: raise SystemExit("14.10: category enum body not found")
@@ -1124,8 +1129,8 @@ jobs:
         lib.write_text(a)
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
-        if 'rememberDraggableState' not in c or 'Orientation.Horizontal' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.2: swipe 3x3 folder verification failed")
-        print("Build 14.11.2: compact square 3x3 folders, horizontal swipe paging, dot indicators")
+        if 'rememberDraggableState' not in c or 'Orientation.Horizontal' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.3: swipe 3x3 folder verification failed")
+        print("Build 14.11.3: compact square 3x3 folders, horizontal swipe paging, dot indicators")
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
@@ -1180,5 +1185,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.11.2 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 14.11.3 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
