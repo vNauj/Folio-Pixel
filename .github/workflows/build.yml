@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 14.10.2 App Library Fix"
+name: "Build Pixel Fold APK · Build 14.10.3 App Library Compile Fix"
 on:
   workflow_dispatch:
 permissions:
@@ -1051,7 +1051,7 @@ jobs:
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         FolioDialogWindow(dim = 0f, blurRadiusDp = 24)
         val appear = rememberEntrance(stiffness = 600f, dampingRatio = .82f)
-        var folderPage by remember(title, apps) { mutableIntStateOf(0) }
+        var folderPage by androidx.compose.runtime.remember(title, apps) { androidx.compose.runtime.mutableIntStateOf(0) }
         val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
         val shown = apps.drop(folderPage.coerceIn(0, pages - 1) * 9).take(9)
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .45f))
@@ -1084,9 +1084,13 @@ jobs:
                             }
                         }
                         if (pages > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = { if (folderPage > 0) folderPage-- }, enabled = folderPage > 0) { Icon(Icons.Rounded.ChevronLeft, "Previous", tint = Color.White) }
+                            androidx.compose.material3.TextButton(onClick = { if (folderPage > 0) folderPage-- }, enabled = folderPage > 0) {
+                                Text("‹", color = Color.White, fontSize = 24.sp)
+                            }
                             Text("${folderPage + 1} / $pages", color = Color.White.copy(alpha = .72f), fontSize = 11.sp)
-                            IconButton(onClick = { if (folderPage < pages - 1) folderPage++ }, enabled = folderPage < pages - 1) { Icon(Icons.Rounded.ChevronRight, "Next", tint = Color.White) }
+                            androidx.compose.material3.TextButton(onClick = { if (folderPage < pages - 1) folderPage++ }, enabled = folderPage < pages - 1) {
+                                Text("›", color = Color.White, fontSize = 24.sp)
+                            }
                         }
                     }
                 }
