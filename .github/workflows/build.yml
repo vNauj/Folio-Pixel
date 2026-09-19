@@ -1016,7 +1016,7 @@ jobs:
 
         cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
         c = cats.read_text()
-        # Build 14.11.3: make the Compose draggable extension explicitly available
+        # Build 14.11.4: make the Compose draggable extension explicitly available
         # to LibraryCategories.kt instead of relying on its existing imports.
         if "import androidx.compose.foundation.gestures.draggable" not in c:
             package_end = c.find("\n", c.find("package "))
@@ -1058,8 +1058,16 @@ jobs:
         val appear = rememberEntrance(stiffness = 600f, dampingRatio = .82f)
         val folderPage = androidx.compose.runtime.remember(title, apps) { androidx.compose.runtime.mutableIntStateOf(0) }
         val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
-        val shown = apps.drop(folderPage.intValue.coerceIn(0, pages - 1) * 9).take(9)
         val swipeDistance = androidx.compose.runtime.remember(title, apps) { androidx.compose.runtime.mutableStateOf(0f) }
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val pageOffset = androidx.compose.animation.core.animateFloatAsState(
+            targetValue = with(density) { (-folderPage.intValue * 286f).dp.toPx() },
+            animationSpec = androidx.compose.animation.core.spring(
+                dampingRatio = .88f,
+                stiffness = 420f
+            ),
+            label = "folder-page-offset"
+        )
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .32f))
             .clickable(androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
             .testTag("category-folder-scrim"))
@@ -1082,19 +1090,33 @@ jobs:
                                 swipeDistance.value = 0f
                             }
                         ).testTag("category-folder")) {
-                        Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 28.dp), verticalArrangement = Arrangement.SpaceEvenly) {
-                            repeat(3) { rowIndex ->
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                    repeat(3) { colIndex ->
-                                        val app = shown.getOrNull(rowIndex * 3 + colIndex)
-                                        if (app != null) {
-                                            Column(Modifier.width(82.dp).clip(RoundedCornerShape(13.dp))
-                                                .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(app.id), app.id, page) else Modifier)
-                                                .combinedClickable(onLongClick = { onActions(app) }) { onLaunch(app) }.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                                AppIcon(app, null, Modifier.size(50.dp), shape = RoundedCornerShape(12.dp))
-                                                Text(app.label, color = Color.White, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp))
+                        Row(
+                            Modifier.fillMaxSize()
+                                .padding(top = 14.dp, bottom = 28.dp)
+                                .graphicsLayer {
+                                    translationX = pageOffset.value + swipeDistance.value
+                                }
+                        ) {
+                            repeat(pages) { pageIndex ->
+                                val pageApps = apps.drop(pageIndex * 9).take(9)
+                                Column(
+                                    Modifier.width(286.dp).fillMaxHeight().padding(horizontal = 12.dp),
+                                    verticalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    repeat(3) { rowIndex ->
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                            repeat(3) { colIndex ->
+                                                val app = pageApps.getOrNull(rowIndex * 3 + colIndex)
+                                                if (app != null) {
+                                                    Column(Modifier.width(82.dp).clip(RoundedCornerShape(13.dp))
+                                                        .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(app.id), app.id, page) else Modifier)
+                                                        .combinedClickable(onLongClick = { onActions(app) }) { onLaunch(app) }.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        AppIcon(app, null, Modifier.size(50.dp), shape = RoundedCornerShape(12.dp))
+                                                        Text(app.label, color = Color.White, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp))
+                                                    }
+                                                } else Spacer(Modifier.width(82.dp).height(66.dp))
                                             }
-                                        } else Spacer(Modifier.width(82.dp).height(66.dp))
+                                        }
                                     }
                                 }
                             }
@@ -1129,8 +1151,8 @@ jobs:
         lib.write_text(a)
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
-        if 'rememberDraggableState' not in c or 'Orientation.Horizontal' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.3: swipe 3x3 folder verification failed")
-        print("Build 14.11.3: compact square 3x3 folders, horizontal swipe paging, dot indicators")
+        if 'rememberDraggableState' not in c or 'Orientation.Horizontal' not in c or 'animateFloatAsState' not in c or 'translationX = pageOffset.value + swipeDistance.value' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.4: animated swipe 3x3 folder verification failed")
+        print("Build 14.11.4: compact square 3x3 folders, interactive animated horizontal paging, dot indicators")
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
@@ -1185,5 +1207,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.11.3 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 14.11.4 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
