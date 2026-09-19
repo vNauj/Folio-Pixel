@@ -1054,43 +1054,49 @@ jobs:
         val folderPage = androidx.compose.runtime.remember(title, apps) { androidx.compose.runtime.mutableIntStateOf(0) }
         val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
         val shown = apps.drop(folderPage.intValue.coerceIn(0, pages - 1) * 9).take(9)
-        Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .45f))
+        var swipeDistance = 0f
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .32f))
             .clickable(androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
             .testTag("category-folder-scrim"))
-        FoldAvoidingBox(Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing).padding(24.dp)) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(Modifier.widthIn(max = 360.dp).fillMaxWidth(.86f).graphicsLayer {
-                    alpha = appear.value; scaleX = .9f + .1f * appear.value; scaleY = scaleX
-                }) {
-                    Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.Bold, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp, bottom = 10.dp))
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp))
-                        .background(Color(0xFF2C2C2E).copy(alpha = .96f)).border(FolioGlass.edge, RoundedCornerShape(30.dp))
-                        .padding(18.dp).pointerInput(Unit) { detectTapGestures() }.testTag("category-folder"),
-                        verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                        shown.chunked(3).forEach { row ->
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                                row.forEach { app ->
-                                    Column(Modifier.width(88.dp).clip(RoundedCornerShape(14.dp))
-                                        .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(app.id), app.id, page) else Modifier)
-                                        .combinedClickable(onLongClick = { onActions(app) }) { onLaunch(app) }.padding(vertical = 4.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally) {
-                                        AppIcon(app, null, Modifier.size(54.dp), shape = RoundedCornerShape(13.dp))
-                                        Text(app.label, color = Color.White, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp))
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.safeDrawing).padding(20.dp)) {
+            val inner = maxWidth > 600.dp
+            Box(Modifier.fillMaxSize(), contentAlignment = if (inner) Alignment.CenterEnd else Alignment.Center) {
+                Column(Modifier.width(310.dp).graphicsLayer { alpha = appear.value; scaleX = .92f + .08f * appear.value; scaleY = scaleX }
+                    .then(if (inner) Modifier.padding(end = 18.dp) else Modifier)) {
+                    Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
+                    Box(Modifier.size(310.dp).clip(RoundedCornerShape(28.dp))
+                        .background(Color(0xFF2C2C2E).copy(alpha = .96f)).border(FolioGlass.edge, RoundedCornerShape(28.dp))
+                        .pointerInput(pages, folderPage.intValue) {
+                            androidx.compose.foundation.gestures.detectHorizontalDragGestures(
+                                onDragStart = { swipeDistance = 0f },
+                                onHorizontalDrag = { change, dragAmount -> change.consume(); swipeDistance += dragAmount },
+                                onDragEnd = {
+                                    if (swipeDistance < -48f && folderPage.intValue < pages - 1) folderPage.intValue++
+                                    else if (swipeDistance > 48f && folderPage.intValue > 0) folderPage.intValue--
+                                    swipeDistance = 0f
+                                }, onDragCancel = { swipeDistance = 0f })
+                        }.testTag("category-folder")) {
+                        Column(Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = 14.dp, bottom = 28.dp), verticalArrangement = Arrangement.SpaceEvenly) {
+                            repeat(3) { rowIndex ->
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                    repeat(3) { colIndex ->
+                                        val app = shown.getOrNull(rowIndex * 3 + colIndex)
+                                        if (app != null) {
+                                            Column(Modifier.width(82.dp).clip(RoundedCornerShape(13.dp))
+                                                .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(app.id), app.id, page) else Modifier)
+                                                .combinedClickable(onLongClick = { onActions(app) }) { onLaunch(app) }.padding(vertical = 2.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                AppIcon(app, null, Modifier.size(50.dp), shape = RoundedCornerShape(12.dp))
+                                                Text(app.label, color = Color.White, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 3.dp, start = 2.dp, end = 2.dp))
+                                            }
+                                        } else Spacer(Modifier.width(82.dp).height(66.dp))
                                     }
                                 }
-                                repeat(3 - row.size) { Spacer(Modifier.width(88.dp)) }
                             }
                         }
-                        if (pages > 1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                            androidx.compose.material3.TextButton(onClick = { if (folderPage.intValue > 0) folderPage.intValue-- }, enabled = folderPage.intValue > 0) {
-                                Text("‹", color = Color.White, fontSize = 24.sp)
-                            }
-                            Text("${folderPage.intValue + 1} / $pages", color = Color.White.copy(alpha = .72f), fontSize = 11.sp)
-                            androidx.compose.material3.TextButton(onClick = { if (folderPage.intValue < pages - 1) folderPage.intValue++ }, enabled = folderPage.intValue < pages - 1) {
-                                Text("›", color = Color.White, fontSize = 24.sp)
-                            }
+                        if (pages > 1) Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                            repeat(pages) { index -> Box(Modifier.size(if (index == folderPage.intValue) 6.dp else 5.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color.White.copy(alpha = if (index == folderPage.intValue) .92f else .30f))) }
                         }
                     }
                 }
@@ -1119,7 +1125,7 @@ jobs:
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
         if 'drop(folderPage.intValue.coerceIn(0, pages - 1) * 9).take(9)' not in c or 'shown.chunked(3)' not in c: raise SystemExit("14.10: 3x3 paging incomplete")
-        print("Build 14.10: Apple-style labels/sorting, draggable category icons, compact 3x3 paginated folders")
+        print("Build 14.11: compact square 3x3 folders, horizontal swipe paging, dot indicators")
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
@@ -1174,5 +1180,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.10 App Library ${VERSION}. Preserves Build 14.9 geometry; adds Apple-style App Library labels/sorting, draggable category-card apps, and compact 3x3 paginated category folders." \
+          --notes "Pixel Fold Build 14.11 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
