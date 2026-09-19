@@ -965,8 +965,8 @@ jobs:
             raise SystemExit("Build 14.7: five-icon dock regressed")
         if 'logicalPosition * paneStep' not in hw.read_text() or 'visibleHomePages * paneStep' not in hw.read_text():
             raise SystemExit("Build 14.7: one-page Inner movement regressed")
-        if 'val rows = 4' not in Path("app/src/main/java/com/mccal/folio/LayoutModel.kt").read_text():
-            raise SystemExit("Build 14.7: 4x6 Home presentation regressed")
+        if 'val rows = 6' not in Path("app/src/main/java/com/mccal/folio/LayoutModel.kt").read_text():
+            raise SystemExit("Build 14.7.1: 4x6 Home presentation regressed")
 
         print("Build 14.7: Cover Today uses the same centered bounds as Cover Home")
         print("Build 14.7: Inner uses slightly larger shared slots")
