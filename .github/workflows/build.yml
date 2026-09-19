@@ -835,7 +835,11 @@ jobs:
           t = tv.read_text()
           cramped = 'JigglePill(stringResource(R.string.done), emphasized = true) { edit.stop() }'
           if cramped not in t: raise SystemExit("Build 14.4: inline Today Done control not found")
-          tv.write_text(t.replace(cramped, '', 1))
+          t = t.replace(cramped, '', 1)
+          # Removing the inline pill can leave whitespace-only Kotlin lines; normalize
+          # them so git diff --check does not reject an otherwise valid patch.
+          t = '\n'.join(line.rstrip() for line in t.split('\n'))
+          tv.write_text(t)
 
           lm = Path("app/src/main/java/com/mccal/folio/LauncherModel.kt")
           m = lm.read_text()
