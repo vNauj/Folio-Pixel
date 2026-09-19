@@ -996,18 +996,25 @@ jobs:
 
         ls = Path("app/src/main/java/com/mccal/folio/LauncherScreen.kt")
         s = ls.read_text()
-        old_cover = '''                                if (todayMode) {
-                                    Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center) {
-                                        leftPageContent(Modifier.width((geometry.gridWidth + 16f).dp).fillMaxHeight())
-                                    }
-                                } else leftPageContent(Modifier.fillMaxSize())'''
-        new_cover = '''                                if (todayMode) {
-                                    // Match the safe horizontal breathing room used by Cover Home/Library.
-                                    leftPageContent(Modifier.fillMaxSize().padding(horizontal = 26.dp))
-                                } else leftPageContent(Modifier.fillMaxSize())'''
-        if old_cover not in s:
-            raise SystemExit("Build 14.8: Build 14.7 Cover Today host not found")
-        s = s.replace(old_cover, new_cover, 1)
+        import re
+        cover_pattern = re.compile(
+            r"(?P<indent>^[ \t]*)if \(todayMode\) \{\s*"
+            r"Row\(Modifier\.fillMaxSize\(\), horizontalArrangement = Arrangement\.Center\) \{\s*"
+            r"leftPageContent\(Modifier\.width\(\(geometry\.gridWidth \+ 16f\)\.dp\)\.fillMaxHeight\(\)\)\s*"
+            r"\}\s*else leftPageContent\(Modifier\.fillMaxSize\(\)\)",
+            re.MULTILINE,
+        )
+        match = cover_pattern.search(s)
+        if not match:
+            raise SystemExit("Build 14.8.2: Build 14.7 Cover Today host not found")
+        indent = match.group("indent")
+        replacement = (
+            f"{indent}if (todayMode) {{\n"
+            f"{indent}    // Match the safe horizontal breathing room used by Cover Home/Library.\n"
+            f"{indent}    leftPageContent(Modifier.fillMaxSize().padding(horizontal = 26.dp))\n"
+            f"{indent}}} else leftPageContent(Modifier.fillMaxSize())"
+        )
+        s = s[:match.start()] + replacement + s[match.end():]
         ls.write_text(s)
 
         final_h = hw.read_text()
@@ -1075,5 +1082,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.8 Balanced Slots ${VERSION}. Keeps the hard two-slot Inner clip, removes the duplicate rail-width reservation so both panes fill the usable display, balances Inner outer margins, and fixes the Cover Today left inset while preserving Cover Home/Library sizing and the five-icon dock." \
+          --notes "Pixel Fold Build 14.8.2 Balanced Slots ${VERSION}. Keeps the hard two-slot Inner clip, removes the duplicate rail-width reservation so both panes fill the usable display, balances Inner outer margins, and fixes the Cover Today left inset while preserving Cover Home/Library sizing and the five-icon dock." \
           --latest
