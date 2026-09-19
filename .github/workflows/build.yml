@@ -1124,8 +1124,8 @@ jobs:
         lib.write_text(a)
 
         if 'RECENTLY_ADDED("Recently Added")' not in c or 'FINANCE("Finance")' not in c or 'MUSIC("Music")' not in c: raise SystemExit("14.10: taxonomy incomplete")
-        if 'drop(folderPage.intValue.coerceIn(0, pages - 1) * 9).take(9)' not in c or 'shown.chunked(3)' not in c: raise SystemExit("14.10: 3x3 paging incomplete")
-        print("Build 14.11: compact square 3x3 folders, horizontal swipe paging, dot indicators")
+        if 'detectHorizontalDragGestures' not in c or 'repeat(3) { rowIndex ->' not in c or 'repeat(3) { colIndex ->' not in c or 'repeat(pages) { index ->' not in c: raise SystemExit("14.11.1: swipe 3x3 folder verification failed")
+        print("Build 14.11.1: compact square 3x3 folders, horizontal swipe paging, dot indicators")
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
@@ -1180,5 +1180,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.11 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 14.11.1 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
