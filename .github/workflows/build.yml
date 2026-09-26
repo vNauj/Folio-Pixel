@@ -17,6 +17,13 @@ jobs:
         repository: McCal-Codes/folio
         ref: 9f38861fb7d8c89896a6db0c762fd988acfc45f2
         persist-credentials: false
+        fetch-depth: 0
+    - name: Apply upstream performance update
+      shell: bash
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git cherry-pick 4012dab0
     - name: Set up Java 17
       uses: actions/setup-java@v4
       with:
