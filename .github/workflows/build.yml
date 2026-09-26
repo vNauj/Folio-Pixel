@@ -1247,20 +1247,14 @@ jobs:
 
         lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
         l = lm.read_text()
-        old = """    val horizontalDock = when (p.dockPlacement) {
-        DockPlacement.AUTOMATIC -> tallRegular
-        DockPlacement.SIDE -> false
-        // Short windows (split screen, pop-up windows) keep the Side Bar too, so the page still fits above the bar.
-        DockPlacement.BOTTOM -> regular || (height > width && height >= HOME_REGULAR_MIN_HEIGHT_DP)
-            }"""
-        new = """    val horizontalDock = if (tallRegular) true else when (p.dockPlacement) {
-        DockPlacement.AUTOMATIC -> false
-        DockPlacement.SIDE -> false
-        // Short windows (split screen, pop-up windows) keep the Side Bar too, so the page still fits above the bar.
-        DockPlacement.BOTTOM -> regular || (height > width && height >= HOME_REGULAR_MIN_HEIGHT_DP)
-            }"""
-        if old not in l: raise SystemExit("Build 15: portrait dock decision block not found")
-        lm.write_text(l.replace(old, new, 1))
+        import re
+        # Pixel's earlier patches can alter comments/indentation around this block. Target the
+        # actual dock decision structurally instead of requiring an exact upstream text match.
+        pattern = r"(?ms)^    val horizontalDock = when \(p\.dockPlacement\) \{.*?^    \}(?=\n    // Everywhere but the upright unfolded screen)"
+        replacement = "    val horizontalDock = if (tallRegular) true else when (p.dockPlacement) {\n        DockPlacement.AUTOMATIC -> false\n        DockPlacement.SIDE -> false\n        DockPlacement.BOTTOM -> regular || (height > width && height >= HOME_REGULAR_MIN_HEIGHT_DP)\n    }"
+        l, changed = re.subn(pattern, replacement, l, count=1)
+        if changed != 1: raise SystemExit(f"Build 15: portrait dock decision block match count={changed}")
+        lm.write_text(l)
 
         cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
         c = cats.read_text()
