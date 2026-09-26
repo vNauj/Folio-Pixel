@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 15 Portrait + Folder Paging"
+name: "Build Pixel Fold APK · Build 15 v5 Portrait + Folder Paging"
 on:
   workflow_dispatch:
 permissions:
@@ -1258,9 +1258,20 @@ jobs:
 
         cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
         c = cats.read_text()
-        if "import androidx.compose.foundation.pager.HorizontalPager" not in c:
+        # Add each Build 15 Compose import independently. Older Pixel patches may already
+        # reference HorizontalPager by fully-qualified name, so one import must never gate the others.
+        required_imports = [
+            "import androidx.compose.foundation.pager.HorizontalPager",
+            "import androidx.compose.foundation.pager.rememberPagerState",
+            "import androidx.compose.runtime.remember",
+            "import androidx.compose.ui.text.style.TextAlign",
+            "import androidx.compose.foundation.shape.CircleShape",
+        ]
+        missing = [imp for imp in required_imports if imp not in c]
+        if missing:
             package_end = c.find("\n", c.find("package "))
-            c = c[:package_end+1] + "import androidx.compose.foundation.pager.HorizontalPager\nimport androidx.compose.foundation.pager.rememberPagerState\n" + c[package_end+1:]
+            if package_end < 0: raise SystemExit("Build 15: LibraryCategories package declaration not found")
+            c = c[:package_end+1] + "\n".join(missing) + "\n" + c[package_end+1:]
         start = c.find('@Composable\ninternal fun CategoryFolder(')
         if start < 0: raise SystemExit("Build 15: CategoryFolder not found")
         brace = c.find('{', start); depth=0; end=None
@@ -1278,9 +1289,9 @@ jobs:
         FolioDialogWindow(dim = 0f, blurRadiusDp = 24)
         val appear = rememberEntrance(stiffness = 600f, dampingRatio = .82f)
         val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
-        val pagerState = rememberPagerState(pageCount = { pages })
+        val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { pages })
         Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .32f))
-            .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
+            .clickable(androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
             .testTag("category-folder-scrim"))
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(20.dp)) {
             val inner = maxWidth > 600.dp
@@ -1292,7 +1303,7 @@ jobs:
                     Box(Modifier.size(310.dp).clip(RoundedCornerShape(28.dp))
                         .background(Color(0xFF2C2C2E).copy(alpha = .96f)).border(FolioGlass.edge, RoundedCornerShape(28.dp))
                         .testTag("category-folder")) {
-                        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize().padding(top = 14.dp, bottom = 28.dp)) { pageIndex ->
+                        androidx.compose.foundation.pager.HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize().padding(top = 14.dp, bottom = 28.dp)) { pageIndex ->
                             val pageApps = apps.drop(pageIndex * 9).take(9)
                             Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.SpaceEvenly) {
                                 repeat(3) { rowIndex ->
@@ -1306,7 +1317,7 @@ jobs:
                                                         .combinedClickable(onClick = { onLaunch(app) }, onLongClick = { onActions(app) }),
                                                         shape = RoundedCornerShape(16.dp))
                                                     Text(app.label, color = Color.White, fontSize = 10.sp, maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                                        overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                                 }
                                             } else Spacer(Modifier.width(78.dp))
                                         }
@@ -1317,7 +1328,7 @@ jobs:
                         if (pages > 1) Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             repeat(pages) { index ->
                                 Box(Modifier.size(if (index == pagerState.currentPage) 7.dp else 6.dp)
-                                    .background(Color.White.copy(alpha = if (index == pagerState.currentPage) .95f else .35f), CircleShape))
+                                    .background(Color.White.copy(alpha = if (index == pagerState.currentPage) .95f else .35f), androidx.compose.foundation.shape.CircleShape))
                             }
                         }
                     }
@@ -1329,7 +1340,7 @@ jobs:
         c = c[:start] + folder + c[end:]
         cats.write_text(c)
         if 'val horizontalDock = if (tallRegular) true else when' not in lm.read_text(): raise SystemExit("Build 15: portrait rule missing")
-        if 'HorizontalPager(state = pagerState' not in cats.read_text(): raise SystemExit("Build 15: folder pager missing")
+        if 'androidx.compose.foundation.pager.HorizontalPager(state = pagerState' not in cats.read_text(): raise SystemExit("Build 15: folder pager missing")
         print("Build 15: portrait inner display uses horizontal five-app dock; landscape unchanged")
         print("Build 15: folder pages use real HorizontalPager with a distinct 9-app slice per page")
         PY15
@@ -1342,6 +1353,25 @@ jobs:
         echo "---- Updater contract ----"
         grep -n "vNauj/Folio-Pixel\|fun supported" app/src/main/java/com/mccal/folio/SoftwareUpdate.kt
         grep -n "val folioVersion" app/build.gradle.kts
+    - name: Verify Build 15 final source
+      shell: bash
+      run: |
+        python3 - <<'PYVERIFY15'
+        from pathlib import Path
+        p = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
+        s = p.read_text()
+        required = [
+            "androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource()",
+            "androidx.compose.foundation.pager.rememberPagerState",
+            "androidx.compose.foundation.pager.HorizontalPager",
+            "androidx.compose.ui.text.style.TextAlign.Center",
+            "androidx.compose.foundation.shape.CircleShape",
+        ]
+        missing = [x for x in required if x not in s]
+        if missing:
+            raise SystemExit("Build 15 v5 final-source verification failed: " + repr(missing))
+        print("Build 15 v5 final source verified: pager + fully-qualified Compose references present")
+        PYVERIFY15
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
     - name: Reuse development signing key
