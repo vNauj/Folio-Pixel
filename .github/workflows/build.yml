@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 14.13 Performance"
+name: "Build Pixel Fold APK · Build 15 Portrait + Folder Paging"
 on:
   workflow_dispatch:
 permissions:
@@ -1241,6 +1241,105 @@ jobs:
         print("Build 14.10: Build 14.9 geometry untouched")
         PY1410
 
+        # Build 15: Pixel Fold portrait adaptation + robust folder paging.
+        python3 - <<'PY15'
+        from pathlib import Path
+
+        lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+        l = lm.read_text()
+        old = """    val horizontalDock = when (p.dockPlacement) {
+        DockPlacement.AUTOMATIC -> tallRegular
+        DockPlacement.SIDE -> false
+        // Short windows (split screen, pop-up windows) keep the Side Bar too, so the page still fits above the bar.
+        DockPlacement.BOTTOM -> regular || (height > width && height >= HOME_REGULAR_MIN_HEIGHT_DP)
+            }"""
+        new = """    val horizontalDock = if (tallRegular) true else when (p.dockPlacement) {
+        DockPlacement.AUTOMATIC -> false
+        DockPlacement.SIDE -> false
+        // Short windows (split screen, pop-up windows) keep the Side Bar too, so the page still fits above the bar.
+        DockPlacement.BOTTOM -> regular || (height > width && height >= HOME_REGULAR_MIN_HEIGHT_DP)
+            }"""
+        if old not in l: raise SystemExit("Build 15: portrait dock decision block not found")
+        lm.write_text(l.replace(old, new, 1))
+
+        cats = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
+        c = cats.read_text()
+        if "import androidx.compose.foundation.pager.HorizontalPager" not in c:
+            package_end = c.find("\n", c.find("package "))
+            c = c[:package_end+1] + "import androidx.compose.foundation.pager.HorizontalPager\nimport androidx.compose.foundation.pager.rememberPagerState\n" + c[package_end+1:]
+        start = c.find('@Composable\ninternal fun CategoryFolder(')
+        if start < 0: raise SystemExit("Build 15: CategoryFolder not found")
+        brace = c.find('{', start); depth=0; end=None
+        for i in range(brace, len(c)):
+            if c[i] == '{': depth += 1
+            elif c[i] == '}':
+                depth -= 1
+                if depth == 0: end=i+1; break
+        if end is None: raise SystemExit("Build 15: CategoryFolder end not found")
+        folder = r'''@Composable
+        internal fun CategoryFolder(title: String, apps: List<AppEntry>, onDismiss: () -> Unit, onLaunch: (AppEntry) -> Unit,
+            onActions: (AppEntry) -> Unit, drag: HomeDragState? = null, page: Int? = null) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        FolioDialogWindow(dim = 0f, blurRadiusDp = 24)
+        val appear = rememberEntrance(stiffness = 600f, dampingRatio = .82f)
+        val pages = ((apps.size + 8) / 9).coerceAtLeast(1)
+        val pagerState = rememberPagerState(pageCount = { pages })
+        Box(Modifier.fillMaxSize().graphicsLayer { alpha = appear.value }.background(Color.Black.copy(alpha = .32f))
+            .clickable(remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, null, onClick = onDismiss)
+            .testTag("category-folder-scrim"))
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(20.dp)) {
+            val inner = maxWidth > 600.dp
+            Box(Modifier.fillMaxSize(), contentAlignment = if (inner) Alignment.CenterEnd else Alignment.Center) {
+                Column(Modifier.width(310.dp).graphicsLayer { alpha = appear.value; scaleX = .92f + .08f * appear.value; scaleY = scaleX }
+                    .then(if (inner) Modifier.padding(end = 18.dp) else Modifier)) {
+                    Text(title, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold, maxLines = 1,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 8.dp, bottom = 8.dp))
+                    Box(Modifier.size(310.dp).clip(RoundedCornerShape(28.dp))
+                        .background(Color(0xFF2C2C2E).copy(alpha = .96f)).border(FolioGlass.edge, RoundedCornerShape(28.dp))
+                        .testTag("category-folder")) {
+                        HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize().padding(top = 14.dp, bottom = 28.dp)) { pageIndex ->
+                            val pageApps = apps.drop(pageIndex * 9).take(9)
+                            Column(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.SpaceEvenly) {
+                                repeat(3) { rowIndex ->
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                                        repeat(3) { colIndex ->
+                                            val app = pageApps.getOrNull(rowIndex * 3 + colIndex)
+                                            if (app != null) {
+                                                Column(Modifier.width(78.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                                    AppIcon(app, app.label, Modifier.size(62.dp)
+                                                        .then(if (drag != null) Modifier.dropRegion(drag, DropTarget.Library(app.id), app.id, page) else Modifier)
+                                                        .combinedClickable(onClick = { onLaunch(app) }, onLongClick = { onActions(app) }),
+                                                        shape = RoundedCornerShape(16.dp))
+                                                    Text(app.label, color = Color.White, fontSize = 10.sp, maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                                }
+                                            } else Spacer(Modifier.width(78.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        if (pages > 1) Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            repeat(pages) { index ->
+                                Box(Modifier.size(if (index == pagerState.currentPage) 7.dp else 6.dp)
+                                    .background(Color.White.copy(alpha = if (index == pagerState.currentPage) .95f else .35f), CircleShape))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+            }
+        }'''
+        c = c[:start] + folder + c[end:]
+        cats.write_text(c)
+        if 'val horizontalDock = if (tallRegular) true else when' not in lm.read_text(): raise SystemExit("Build 15: portrait rule missing")
+        if 'HorizontalPager(state = pagerState' not in cats.read_text(): raise SystemExit("Build 15: folder pager missing")
+        print("Build 15: portrait inner display uses horizontal five-app dock; landscape unchanged")
+        print("Build 15: folder pages use real HorizontalPager with a distinct 9-app slice per page")
+        PY15
+
         git diff --check
         echo "---- Changed files ----"
         git diff --stat
@@ -1249,86 +1348,6 @@ jobs:
         echo "---- Updater contract ----"
         grep -n "vNauj/Folio-Pixel\|fun supported" app/src/main/java/com/mccal/folio/SoftwareUpdate.kt
         grep -n "val folioVersion" app/build.gradle.kts
-    - name: Apply upstream performance optimizations
-      shell: bash
-      run: |
-        set -euo pipefail
-        python3 - <<'PYPERF'
-        from pathlib import Path
-
-        root = Path("app/src/main/java/com/mccal/folio")
-        changed = []
-
-        # Performance-only port from upstream dynamic-lifecycle (#140 / 77dc1cfa).
-        replacements = {
-            "AppPanel.kt": [("IslandListenerService.notifications.collectAsState().value", "IslandListenerService.notifications.collectAsStateWithLifecycle().value"), ("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value")],
-            "CutoutIsland.kt": [("IslandEvents.latest.collectAsState()", "IslandEvents.latest.collectAsStateWithLifecycle()")],
-            "AppLibrary.kt": [("Installs.active.collectAsState().value", "Installs.active.collectAsStateWithLifecycle().value")],
-            "LauncherScreen.kt": [("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value")],
-            "LockCover.kt": [("ScreenshotMode.on.collectAsState()", "ScreenshotMode.on.collectAsStateWithLifecycle()"), ("IslandListenerService.notifications.collectAsState().value", "IslandListenerService.notifications.collectAsStateWithLifecycle().value")],
-            "MarketFolioBeta.kt": [("SoftwareUpdate.status.collectAsState()", "SoftwareUpdate.status.collectAsStateWithLifecycle()")],
-            "MicroHome.kt": [("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value"), ("IslandListenerService.notifications.collectAsState().value", "IslandListenerService.notifications.collectAsStateWithLifecycle().value")],
-            "ScreenshotMode.kt": [("ScreenshotMode.on.collectAsState()", "ScreenshotMode.on.collectAsStateWithLifecycle()")],
-            "StatusRail.kt": [("ScreenshotMode.on.collectAsState()", "ScreenshotMode.on.collectAsStateWithLifecycle()")],
-            "TopPanels.kt": [("IslandListenerService.notifications.collectAsState()", "IslandListenerService.notifications.collectAsStateWithLifecycle()"), ("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value")],
-        }
-
-        for name, pairs in replacements.items():
-            p = root / name
-            if not p.exists(): continue
-            text = p.read_text(); before = text
-            for old, new in pairs: text = text.replace(old, new)
-            if text != before:
-                if "collectAsStateWithLifecycle" in text and "import androidx.lifecycle.compose.collectAsStateWithLifecycle" not in text:
-                    text = text.replace("package com.mccal.folio\n", "package com.mccal.folio\n\nimport androidx.lifecycle.compose.collectAsStateWithLifecycle\n", 1)
-                p.write_text(text); changed.append(name)
-
-        # Share Folio's lifecycle-aware minute ticker instead of private clock loops.
-        p = root / "MicroHome.kt"
-        if p.exists():
-            text = p.read_text()
-            old = "var now by remember { mutableLongStateOf(System.currentTimeMillis()) }\n    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(60_000 - now % 60_000) } }"
-            if old in text:
-                text = text.replace(old, "// Shared minute tick; stops when nobody is watching.\n    val now by rememberMinuteTick()", 1)
-                p.write_text(text)
-                if p.name not in changed: changed.append(p.name)
-
-        p = root / "StatusRail.kt"
-        if p.exists():
-            text = p.read_text()
-            old = "val screenshot by ScreenshotMode.on.collectAsStateWithLifecycle()\n    val now by produceState(ScreenshotMode.now(screenshot), screenshot) {\n        while (true) {\n            value = ScreenshotMode.now(screenshot)\n            delay(60_050L - (System.currentTimeMillis() % 60_000L))\n        }\n    }"
-            old2 = old.replace("collectAsStateWithLifecycle()", "collectAsState()")
-            target = old if old in text else old2
-            if target in text:
-                text = text.replace(target, "// Shared minute tick; one clock for the app.\n    val now = displayNow(rememberMinuteTick().value)", 1)
-                p.write_text(text)
-                if p.name not in changed: changed.append(p.name)
-
-        # Pause Smart Stack relevance work whenever Folio is not RESUMED.
-        p = root / "HomeWidgets.kt"
-        if p.exists():
-            text = p.read_text()
-            old_head = "LaunchedEffect(rotate, cards) {\n        if (rotate) while (true) {"
-            new_head = "val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current\n    LaunchedEffect(rotate, cards, lifecycleOwner) {\n        if (rotate) lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { while (true) {"
-            if old_head in text:
-                text = text.replace(old_head, new_head, 1)
-                anchor = "            if (pick != null && !pager.isScrollInProgress) pager.animateScrollToPage(pick)\n        }\n    }\n    var dotsVisible"
-                repl = "            if (pick != null && !pager.isScrollInProgress) pager.animateScrollToPage(pick)\n        }\n    } }\n    var dotsVisible"
-                if anchor not in text: raise SystemExit("Smart Stack anchor changed; refusing unsafe patch")
-                text = text.replace(anchor, repl, 1)
-                if "import androidx.lifecycle.repeatOnLifecycle" not in text:
-                    text = text.replace("package com.mccal.folio\n", "package com.mccal.folio\n\nimport androidx.lifecycle.repeatOnLifecycle\n", 1)
-                p.write_text(text); changed.append(p.name)
-
-        if not changed: raise SystemExit("Performance port made no changes; refusing to build")
-        print("Build 14.13 performance port applied to:")
-        for name in changed: print(" -", name)
-        PYPERF
-
-        git diff --check
-        echo "---- Performance port ----"
-        git diff --stat
-        grep -R -n "collectAsStateWithLifecycle\|repeatOnLifecycle" app/src/main/java/com/mccal/folio | head -40 || true
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
     - name: Reuse development signing key
@@ -1336,6 +1355,16 @@ jobs:
       with:
         path: ~/.android/debug.keystore
         key: folio-pixel-development-key-v1
+    - name: Verify original signing key was restored
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ ! -f "$HOME/.android/debug.keystore" ]; then
+          echo "::error::Original Folio Pixel signing key was not restored. Refusing to create another incompatible APK."
+          exit 1
+        fi
+        echo "Signing certificate for this build:"
+        keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android 2>/dev/null | grep -E "SHA256:|Owner:|Valid from:" || true
     - name: Build Pixel Fold APK
       shell: bash
       run: |
@@ -1372,5 +1401,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.13 Performance ${VERSION}. Preserves the working 14.12.3 Pixel Fold UI, geometry, Today widget resizing, and square 3x3 paged folders. Adds upstream lifecycle performance optimizations: background-aware state collection, shared minute ticking, and Smart Stack work paused while Folio is not visible. Build/signing path remains unchanged." \
+          --notes "Pixel Fold Build 14.12.3 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
           --latest
