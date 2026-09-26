@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 14.10.4 App Library State Fix"
+name: "Build Pixel Fold APK · Build 14.13 Performance"
 on:
   workflow_dispatch:
 permissions:
@@ -17,13 +17,6 @@ jobs:
         repository: McCal-Codes/folio
         ref: 9f38861fb7d8c89896a6db0c762fd988acfc45f2
         persist-credentials: false
-        fetch-depth: 0
-    - name: Apply upstream performance update
-      shell: bash
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git cherry-pick 4012dab0
     - name: Set up Java 17
       uses: actions/setup-java@v4
       with:
@@ -1256,6 +1249,86 @@ jobs:
         echo "---- Updater contract ----"
         grep -n "vNauj/Folio-Pixel\|fun supported" app/src/main/java/com/mccal/folio/SoftwareUpdate.kt
         grep -n "val folioVersion" app/build.gradle.kts
+    - name: Apply upstream performance optimizations
+      shell: bash
+      run: |
+        set -euo pipefail
+        python3 - <<'PYPERF'
+        from pathlib import Path
+
+        root = Path("app/src/main/java/com/mccal/folio")
+        changed = []
+
+        # Performance-only port from upstream dynamic-lifecycle (#140 / 77dc1cfa).
+        replacements = {
+            "AppPanel.kt": [("IslandListenerService.notifications.collectAsState().value", "IslandListenerService.notifications.collectAsStateWithLifecycle().value"), ("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value")],
+            "CutoutIsland.kt": [("IslandEvents.latest.collectAsState()", "IslandEvents.latest.collectAsStateWithLifecycle()")],
+            "AppLibrary.kt": [("Installs.active.collectAsState().value", "Installs.active.collectAsStateWithLifecycle().value")],
+            "LauncherScreen.kt": [("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value")],
+            "LockCover.kt": [("ScreenshotMode.on.collectAsState()", "ScreenshotMode.on.collectAsStateWithLifecycle()"), ("IslandListenerService.notifications.collectAsState().value", "IslandListenerService.notifications.collectAsStateWithLifecycle().value")],
+            "MarketFolioBeta.kt": [("SoftwareUpdate.status.collectAsState()", "SoftwareUpdate.status.collectAsStateWithLifecycle()")],
+            "MicroHome.kt": [("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value"), ("IslandListenerService.notifications.collectAsState().value", "IslandListenerService.notifications.collectAsStateWithLifecycle().value")],
+            "ScreenshotMode.kt": [("ScreenshotMode.on.collectAsState()", "ScreenshotMode.on.collectAsStateWithLifecycle()")],
+            "StatusRail.kt": [("ScreenshotMode.on.collectAsState()", "ScreenshotMode.on.collectAsStateWithLifecycle()")],
+            "TopPanels.kt": [("IslandListenerService.notifications.collectAsState()", "IslandListenerService.notifications.collectAsStateWithLifecycle()"), ("IslandListenerService.activity.collectAsState().value", "IslandListenerService.activity.collectAsStateWithLifecycle().value")],
+        }
+
+        for name, pairs in replacements.items():
+            p = root / name
+            if not p.exists(): continue
+            text = p.read_text(); before = text
+            for old, new in pairs: text = text.replace(old, new)
+            if text != before:
+                if "collectAsStateWithLifecycle" in text and "import androidx.lifecycle.compose.collectAsStateWithLifecycle" not in text:
+                    text = text.replace("package com.mccal.folio\n", "package com.mccal.folio\n\nimport androidx.lifecycle.compose.collectAsStateWithLifecycle\n", 1)
+                p.write_text(text); changed.append(name)
+
+        # Share Folio's lifecycle-aware minute ticker instead of private clock loops.
+        p = root / "MicroHome.kt"
+        if p.exists():
+            text = p.read_text()
+            old = "var now by remember { mutableLongStateOf(System.currentTimeMillis()) }\n    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(60_000 - now % 60_000) } }"
+            if old in text:
+                text = text.replace(old, "// Shared minute tick; stops when nobody is watching.\n    val now by rememberMinuteTick()", 1)
+                p.write_text(text)
+                if p.name not in changed: changed.append(p.name)
+
+        p = root / "StatusRail.kt"
+        if p.exists():
+            text = p.read_text()
+            old = "val screenshot by ScreenshotMode.on.collectAsStateWithLifecycle()\n    val now by produceState(ScreenshotMode.now(screenshot), screenshot) {\n        while (true) {\n            value = ScreenshotMode.now(screenshot)\n            delay(60_050L - (System.currentTimeMillis() % 60_000L))\n        }\n    }"
+            old2 = old.replace("collectAsStateWithLifecycle()", "collectAsState()")
+            target = old if old in text else old2
+            if target in text:
+                text = text.replace(target, "// Shared minute tick; one clock for the app.\n    val now = displayNow(rememberMinuteTick().value)", 1)
+                p.write_text(text)
+                if p.name not in changed: changed.append(p.name)
+
+        # Pause Smart Stack relevance work whenever Folio is not RESUMED.
+        p = root / "HomeWidgets.kt"
+        if p.exists():
+            text = p.read_text()
+            old_head = "LaunchedEffect(rotate, cards) {\n        if (rotate) while (true) {"
+            new_head = "val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current\n    LaunchedEffect(rotate, cards, lifecycleOwner) {\n        if (rotate) lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) { while (true) {"
+            if old_head in text:
+                text = text.replace(old_head, new_head, 1)
+                anchor = "            if (pick != null && !pager.isScrollInProgress) pager.animateScrollToPage(pick)\n        }\n    }\n    var dotsVisible"
+                repl = "            if (pick != null && !pager.isScrollInProgress) pager.animateScrollToPage(pick)\n        }\n    } }\n    var dotsVisible"
+                if anchor not in text: raise SystemExit("Smart Stack anchor changed; refusing unsafe patch")
+                text = text.replace(anchor, repl, 1)
+                if "import androidx.lifecycle.repeatOnLifecycle" not in text:
+                    text = text.replace("package com.mccal.folio\n", "package com.mccal.folio\n\nimport androidx.lifecycle.repeatOnLifecycle\n", 1)
+                p.write_text(text); changed.append(p.name)
+
+        if not changed: raise SystemExit("Performance port made no changes; refusing to build")
+        print("Build 14.13 performance port applied to:")
+        for name in changed: print(" -", name)
+        PYPERF
+
+        git diff --check
+        echo "---- Performance port ----"
+        git diff --stat
+        grep -R -n "collectAsStateWithLifecycle\|repeatOnLifecycle" app/src/main/java/com/mccal/folio | head -40 || true
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
     - name: Reuse development signing key
@@ -1299,5 +1372,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.12.3 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 14.13 Performance ${VERSION}. Preserves the working 14.12.3 Pixel Fold UI, geometry, Today widget resizing, and square 3x3 paged folders. Adds upstream lifecycle performance optimizations: background-aware state collection, shared minute ticking, and Smart Stack work paused while Folio is not visible. Build/signing path remains unchanged." \
           --latest
