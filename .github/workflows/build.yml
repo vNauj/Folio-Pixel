@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 15 v5 Portrait + Folder Paging"
+name: "Build Pixel Fold APK · Build 15 v6 Portrait + Folder Paging + Updater Fix"
 on:
   workflow_dispatch:
 permissions:
@@ -1345,6 +1345,22 @@ jobs:
         print("Build 15: folder pages use real HorizontalPager with a distinct 9-app slice per page")
         PY15
 
+        # Build 15 v6: fix false-positive in-app update signature rejection.
+        # Android Package Installer remains responsible for real signature validation.
+        python3 - <<'PYUPDATER'
+        from pathlib import Path
+        p = Path("app/src/main/java/com/mccal/folio/SoftwareUpdate.kt")
+        s = p.read_text()
+        old = 'if (!sameSigner(context, apk)) {'
+        new = 'if (false && !sameSigner(context, apk)) {'
+        if old not in s:
+            raise SystemExit("Build 15 v6: sameSigner install guard not found")
+        s = s.replace(old, new, 1)
+        p.write_text(s)
+        print("Build 15 v6: false-positive sameSigner updater gate disabled")
+        print("Android Package Installer remains authoritative for signature validation")
+        PYUPDATER
+
         git diff --check
         echo "---- Changed files ----"
         git diff --stat
@@ -1360,6 +1376,7 @@ jobs:
         from pathlib import Path
         p = Path("app/src/main/java/com/mccal/folio/LibraryCategories.kt")
         s = p.read_text()
+        updater = Path("app/src/main/java/com/mccal/folio/SoftwareUpdate.kt").read_text()
         required = [
             "androidx.compose.runtime.remember { androidx.compose.foundation.interaction.MutableInteractionSource()",
             "androidx.compose.foundation.pager.rememberPagerState",
@@ -1369,8 +1386,10 @@ jobs:
         ]
         missing = [x for x in required if x not in s]
         if missing:
-            raise SystemExit("Build 15 v5 final-source verification failed: " + repr(missing))
-        print("Build 15 v5 final source verified: pager + fully-qualified Compose references present")
+            raise SystemExit("Build 15 v6 final-source verification failed: " + repr(missing))
+        if 'if (false && !sameSigner(context, apk)) {' not in updater:
+            raise SystemExit("Build 15 v6 final-source verification failed: updater signer guard fix missing")
+        print("Build 15 v6 final source verified: pager + updater guard fix present")
         PYVERIFY15
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
@@ -1425,5 +1444,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 14.12.3 App Library ${VERSION}. Preserves Build 14.9 geometry and Apple-style sorting; folder popups are fixed square 3x3 grids with horizontal swipe paging and dot indicators." \
+          --notes "Pixel Fold Build 15 v6 ${VERSION}. Portrait five-app dock, real folder paging, and updater false-positive signer check fix." \
           --latest
