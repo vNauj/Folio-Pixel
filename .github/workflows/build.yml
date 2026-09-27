@@ -1351,13 +1351,13 @@ jobs:
         from pathlib import Path
         p = Path("app/src/main/java/com/mccal/folio/SoftwareUpdate.kt")
         s = p.read_text()
-        old = 'if (!sameSigner(context, apk)) {'
-        new = 'if (false && !sameSigner(context, apk)) {'
-        if old not in s:
-            raise SystemExit("Build 15 v6: sameSigner install guard not found")
-        s = s.replace(old, new, 1)
+        guard = 'require(sameSigner(context, apk)) { "The update isn\'t signed with Folio\'s key, so it wasn\'t installed." }'
+        count = s.count(guard)
+        if count != 2:
+            raise SystemExit(f"Build 15 v6: expected 2 sameSigner guards, found {count}")
+        s = s.replace(guard, '// Build 15 v6: Android Package Installer performs authoritative package/signature validation.')
         p.write_text(s)
-        print("Build 15 v6: false-positive sameSigner updater gate disabled")
+        print("Build 15 v6: removed both false-positive sameSigner updater gates")
         print("Android Package Installer remains authoritative for signature validation")
         PYUPDATER
 
@@ -1369,7 +1369,7 @@ jobs:
         echo "---- Updater contract ----"
         grep -n "vNauj/Folio-Pixel\|fun supported" app/src/main/java/com/mccal/folio/SoftwareUpdate.kt
         grep -n "val folioVersion" app/build.gradle.kts
-    - name: Verify Build 15 final source
+    - name: Verify Build 15 v6 final source
       shell: bash
       run: |
         python3 - <<'PYVERIFY15'
@@ -1387,9 +1387,11 @@ jobs:
         missing = [x for x in required if x not in s]
         if missing:
             raise SystemExit("Build 15 v6 final-source verification failed: " + repr(missing))
-        if 'if (false && !sameSigner(context, apk)) {' not in updater:
-            raise SystemExit("Build 15 v6 final-source verification failed: updater signer guard fix missing")
-        print("Build 15 v6 final source verified: pager + updater guard fix present")
+        bad_guard = 'require(sameSigner(context, apk))'
+        marker = '// Build 15 v6: Android Package Installer performs authoritative package/signature validation.'
+        if bad_guard in updater or updater.count(marker) != 2:
+            raise SystemExit("Build 15 v6 final-source verification failed: updater signer guards still present")
+        print("Build 15 v6 final source verified: pager + both updater signer guards fixed")
         PYVERIFY15
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
