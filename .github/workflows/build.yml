@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 15 v7 Permanent Signing"
+name: "Build Pixel Fold APK · ONE-TIME Permanent Key Bootstrap"
 on:
   workflow_dispatch:
 permissions:
@@ -1395,24 +1395,25 @@ jobs:
         PYVERIFY15
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
-    # Build 15 v7: use one permanent signing identity from GitHub Actions secrets.
-    # Required repository secret: FOLIO_SIGNING_KEY_B64
-    # Create it once from the NEW keystore you choose to keep permanently.
-    - name: Restore permanent Folio signing key
+    # One-time bootstrap: generate the permanent Folio signing key as an artifact.
+    - name: Generate permanent Folio signing key
       shell: bash
-      env:
-        FOLIO_SIGNING_KEY_B64: ${{ secrets.FOLIO_SIGNING_KEY_B64 }}
       run: |
         set -euo pipefail
-        if [ -z "${FOLIO_SIGNING_KEY_B64:-}" ]; then
-          echo "::error::Missing repository secret FOLIO_SIGNING_KEY_B64."
-          exit 1
-        fi
-        mkdir -p "$HOME/.android"
-        printf '%s' "$FOLIO_SIGNING_KEY_B64" | base64 --decode > "$HOME/.android/debug.keystore"
-        chmod 600 "$HOME/.android/debug.keystore"
-        echo "Permanent signing certificate:"
+        mkdir -p "$HOME/.android" signing-key
+        keytool -genkeypair -v           -keystore "$HOME/.android/debug.keystore"           -storepass android           -alias androiddebugkey           -keypass android           -keyalg RSA -keysize 2048 -validity 10000           -dname "CN=Folio Pixel Fold Permanent, OU=Folio Pixel, O=Folio Pixel, L=Bradenton, ST=Florida, C=US"
+        cp "$HOME/.android/debug.keystore" signing-key/Folio-Pixel-Permanent.keystore
+        base64 -w 0 "$HOME/.android/debug.keystore" > signing-key/FOLIO_SIGNING_KEY_B64.txt
+        echo
+        echo "New permanent signing certificate:"
         keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android 2>/dev/null | grep -E "SHA256:|Owner:|Valid from:"
+    - name: Upload permanent signing key
+      uses: actions/upload-artifact@v4
+      with:
+        name: Folio-Pixel-Permanent-Signing-Key
+        path: signing-key/
+        if-no-files-found: error
+        retention-days: 1
     - name: Build Pixel Fold APK
       shell: bash
       run: |
@@ -1449,5 +1450,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 15 v7 ${VERSION}. Permanent signing identity, portrait five-app dock, real folder paging, and updater fix." \
+          --notes "Pixel Fold permanent-key bootstrap ${VERSION}. Save the signing-key artifact before using this APK." \
           --latest
