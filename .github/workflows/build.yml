@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 15 v8 Locked Permanent Signing"
+name: "Build Pixel Fold APK · Build 16 Portrait Scale Test"
 on:
   workflow_dispatch:
 permissions:
@@ -1345,6 +1345,41 @@ jobs:
         print("Build 15: folder pages use real HorizontalPager with a distinct 9-app slice per page")
         PY15
 
+
+        # Build 16 test: make unfolded portrait App Library denser and the portrait dock smaller.
+        # Landscape behavior is intentionally unchanged.
+        python3 - <<'PY16'
+        from pathlib import Path
+
+        lib = Path("app/src/main/java/com/mccal/folio/AppLibrary.kt")
+        a = lib.read_text()
+        old_cols = 'val columns = 2'
+        new_cols = '''val portraitInnerLibrary = androidx.compose.ui.platform.LocalConfiguration.current.let { cfg ->
+                cfg.screenWidthDp >= 600 && cfg.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
+            }
+            val columns = if (portraitInnerLibrary) 3 else 2'''
+        if old_cols not in a:
+            raise SystemExit("Build 16: App Library column rule not found")
+        a = a.replace(old_cols, new_cols, 1)
+        lib.write_text(a)
+
+        lm = Path("app/src/main/java/com/mccal/folio/LayoutModel.kt")
+        l = lm.read_text()
+        marker = '    // Everywhere but the upright unfolded screen'
+        marker_pos = l.find(marker)
+        if marker_pos < 0:
+            raise SystemExit("Build 16: dock geometry marker not found")
+        before, after = l[:marker_pos], l[marker_pos:]
+        count = after.count('p.dockWidth')
+        if count < 1:
+            raise SystemExit("Build 16: dock width setting not found after portrait rule")
+        after = after.replace('p.dockWidth', '(if (tallRegular) p.dockWidth * 0.84f else p.dockWidth)')
+        lm.write_text(before + after)
+
+        print("Build 16: portrait Inner App Library uses 3 columns; landscape remains 2")
+        print(f"Build 16: portrait dock width scaled to 84% ({count} dockWidth reference(s)); landscape unchanged")
+        PY16
+
         # Build 15 v6: fix false-positive in-app update signature rejection.
         # Android Package Installer remains responsible for real signature validation.
         python3 - <<'PYUPDATER'
@@ -1457,5 +1492,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 15 v8 ${VERSION}. Locked permanent signing identity, portrait five-app dock, real folder paging, and updater fix." \
+          --notes "Pixel Fold Build 16 ${VERSION}. Portrait App Library density + smaller portrait dock test; permanent signing preserved." \
           --latest
