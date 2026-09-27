@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 15 v6 Portrait + Folder Paging + Updater Fix"
+name: "Build Pixel Fold APK · Build 15 v7 Permanent Signing"
 on:
   workflow_dispatch:
 permissions:
@@ -1395,21 +1395,24 @@ jobs:
         PYVERIFY15
     - name: Set up Gradle
       uses: gradle/actions/setup-gradle@v4
-    - name: Reuse development signing key
-      uses: actions/cache@v4
-      with:
-        path: ~/.android/debug.keystore
-        key: folio-pixel-development-key-v1
-    - name: Verify original signing key was restored
+    # Build 15 v7: use one permanent signing identity from GitHub Actions secrets.
+    # Required repository secret: FOLIO_SIGNING_KEY_B64
+    # Create it once from the NEW keystore you choose to keep permanently.
+    - name: Restore permanent Folio signing key
       shell: bash
+      env:
+        FOLIO_SIGNING_KEY_B64: ${{ secrets.FOLIO_SIGNING_KEY_B64 }}
       run: |
         set -euo pipefail
-        if [ ! -f "$HOME/.android/debug.keystore" ]; then
-          echo "::error::Original Folio Pixel signing key was not restored. Refusing to create another incompatible APK."
+        if [ -z "${FOLIO_SIGNING_KEY_B64:-}" ]; then
+          echo "::error::Missing repository secret FOLIO_SIGNING_KEY_B64."
           exit 1
         fi
-        echo "Signing certificate for this build:"
-        keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android 2>/dev/null | grep -E "SHA256:|Owner:|Valid from:" || true
+        mkdir -p "$HOME/.android"
+        printf '%s' "$FOLIO_SIGNING_KEY_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+        chmod 600 "$HOME/.android/debug.keystore"
+        echo "Permanent signing certificate:"
+        keytool -list -v -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android 2>/dev/null | grep -E "SHA256:|Owner:|Valid from:"
     - name: Build Pixel Fold APK
       shell: bash
       run: |
@@ -1446,5 +1449,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 15 v6 ${VERSION}. Portrait five-app dock, real folder paging, and updater false-positive signer check fix." \
+          --notes "Pixel Fold Build 15 v7 ${VERSION}. Permanent signing identity, portrait five-app dock, real folder paging, and updater fix." \
           --latest
