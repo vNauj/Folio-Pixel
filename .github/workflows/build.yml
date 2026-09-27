@@ -1,4 +1,4 @@
-name: "Build Pixel Fold APK · Build 16 Portrait Scale Test"
+name: "Build Pixel Fold APK · Build 16.1 Portrait Scale Test"
 on:
   workflow_dispatch:
 permissions:
@@ -1354,7 +1354,7 @@ jobs:
         lib = Path("app/src/main/java/com/mccal/folio/AppLibrary.kt")
         a = lib.read_text()
         old_cols = 'val columns = 2'
-        new_cols = '''val portraitInnerLibrary = androidx.compose.ui.platform.LocalConfiguration.current.let { cfg ->
+        new_cols = '''val portraitInnerLibrary = context.resources.configuration.let { cfg ->
                 cfg.screenWidthDp >= 600 && cfg.orientation == android.content.res.Configuration.ORIENTATION_PORTRAIT
             }
             val columns = if (portraitInnerLibrary) 3 else 2'''
@@ -1492,5 +1492,5 @@ jobs:
         gh release create "$TAG" output/Folio-Pixel-Fold.apk output/SHA256SUMS.txt \
           --repo vNauj/Folio-Pixel \
           --title "Folio Pixel Fold ${VERSION}" \
-          --notes "Pixel Fold Build 16 ${VERSION}. Portrait App Library density + smaller portrait dock test; permanent signing preserved." \
+          --notes "Pixel Fold Build 16.1 ${VERSION}. Portrait App Library density + smaller portrait dock test; permanent signing preserved." \
           --latest
